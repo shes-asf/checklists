@@ -1,0 +1,31 @@
+:root{--azul:#0b3d5c;--azul2:#e6eef3;--verde:#12805c;--verde2:#e2f4ec;--rojo:#c0392b;--rojo2:#fdecea;--ambar:#b96a00;--ambar2:#fff3dc;--gris:#5b6770;--borde:#d5dde3;--fondo:#f3f6f8}
+*{box-sizing:border-box}body{margin:0;font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--fondo);color:#17222b}
+header.app{background:var(--azul);color:#fff;padding:12px 20px;display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+header.app h1{font-size:1.1rem;margin:0;flex:1}header.app a{color:#fff;font-size:.9rem}
+main{max-width:1240px;margin:0 auto;padding:16px}
+h2{font-size:1.05rem;margin:22px 0 8px;color:var(--azul)}
+button,.btn{font:inherit;cursor:pointer;border:1px solid var(--azul);background:var(--azul);color:#fff;border-radius:8px;padding:8px 14px;font-weight:600}
+button.sec{background:#fff;color:var(--azul)}button.mini{padding:3px 9px;font-size:.85rem}button.rojo{background:#fff;color:var(--rojo);border-color:var(--rojo)}
+button:disabled{opacity:.5;cursor:default}
+input,select,textarea{font:inherit;padding:7px 8px;border:1px solid var(--borde);border-radius:7px;background:#fff;max-width:100%}
+.login{max-width:380px;margin:60px auto;background:#fff;border:1px solid var(--borde);border-radius:14px;padding:24px}
+.login input{width:100%;margin:8px 0;font-size:1.05rem;padding:11px}.login button{width:100%;padding:11px;margin-top:6px}
+.filtros{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+.kpi{background:#fff;border:1px solid var(--borde);border-radius:12px;padding:14px}.kpi b{display:block;font-size:1.9rem;line-height:1.1}.kpi span{color:var(--gris);font-size:.85rem}
+.caja{background:#fff;border:1px solid var(--borde);border-radius:12px;padding:14px;margin-top:12px;overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:.9rem}th,td{padding:7px 9px;border-bottom:1px solid #e8edf0;text-align:left;vertical-align:top}
+th{font-size:.78rem;text-transform:uppercase;letter-spacing:.04em;color:var(--gris);white-space:nowrap;background:#fafcfd;position:sticky;top:0}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}tr.clic{cursor:pointer}tr.clic:hover{background:var(--azul2)}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin:14px 0 0}.tabs button{background:#fff;color:var(--azul)}.tabs button.on{background:var(--azul);color:#fff}
+.chip{display:inline-block;font-size:.75rem;font-weight:700;padding:2px 9px;border-radius:99px;white-space:nowrap}
+.c-ok{background:var(--verde2);color:var(--verde)}.c-mal{background:var(--rojo2);color:var(--rojo)}.c-med{background:var(--ambar2);color:var(--ambar)}.c-gris{background:#e7ebee;color:var(--gris)}
+.barra-pct{display:inline-block;width:70px;height:8px;background:#e3e9ed;border-radius:9px;vertical-align:middle;margin-right:6px;overflow:hidden}.barra-pct i{display:block;height:100%;background:var(--verde)}
+.aviso{background:var(--ambar2);border:1px solid #e9c98a;border-radius:10px;padding:10px 12px;margin:10px 0}.aviso.ok{background:var(--verde2);border-color:#a9dcc5}.aviso.mal{background:var(--rojo2);border-color:#f1b5ae}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:9;padding:16px}.modal>div{background:#fff;border-radius:12px;padding:14px;max-width:min(960px,100%);max-height:92vh;overflow:auto}
+.modal img{max-width:100%;max-height:78vh;display:block}
+.ed td{padding:3px 4px}.ed input,.ed select{width:100%;min-width:70px;padding:5px 6px}.ed input.ancho{min-width:260px}.ed input.corto{min-width:56px;width:64px}
+.ayuda{color:var(--gris);font-size:.88rem;margin:4px 0 10px}.fijo-abajo{position:sticky;bottom:0;background:var(--fondo);padding:10px 0;display:flex;gap:10px;align-items:center;border-top:1px solid var(--borde);margin-top:14px;z-index:3}
+.form{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px}.form label{display:flex;flex-direction:column;font-size:.8rem;color:var(--gris);gap:3px}
+svg text{font:11px system-ui,sans-serif;fill:#5b6770}
+.ed input.medio{min-width:150px}

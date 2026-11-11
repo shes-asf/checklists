@@ -1,0 +1,16 @@
+{
+  "name": "Checklists de Operaciones",
+  "short_name": "Checklists",
+  "description": "Checklists de operaciones — funciona sin señal",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0b3d5c",
+  "theme_color": "#0b3d5c",
+  "lang": "es-CL",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
