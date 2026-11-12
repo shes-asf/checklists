@@ -35,7 +35,9 @@
     reglas: [{ k: 'tipo', t: 'Regla', ro: true }, { t: 'Qué hace', ro: true, get: r => (C.tipos[r.tipo] || [r.descripcion])[0] }, { k: 'activa', t: 'Activa', op: SINO }, { k: 'sede_id', t: 'Aplica a', op: () => sedesOp(true) },
       { k: 'parametro', t: 'Parámetro 1', cls: 'corto', nota: r => (C.tipos[r.tipo] || [])[1] }, { k: 'parametro2', t: 'Parámetro 2', cls: 'corto', nota: r => (C.tipos[r.tipo] || [])[2] }],
     parametros: [{ k: 'clave', t: 'Parámetro', ro: true }, { k: 'valor', t: 'Valor', cls: 'ancho' }, { k: 'descripcion', t: 'Para qué sirve', ro: true }],
-    equipos: [{ k: 'nombre', t: 'Equipo', ro: true }, { t: 'Sede', ro: true, get: d => (C.t.Sedes.find(s => s.sede_id === d.sede_id) || {}).nombre || d.sede_id }, { t: 'Registrado', ro: true, get: d => String(d.registrado_en).slice(0, 10) }, { k: 'activo', t: 'Autorizado', op: SINO }],
+    equipos: [{ k: 'nombre', t: 'Equipo', ro: true }, { t: 'Sede', ro: true, get: d => (C.t.Sedes.find(s => s.sede_id === d.sede_id) || {}).nombre || d.sede_id }, { t: 'Registrado', ro: true, get: d => String(d.registrado_en).slice(0, 10) },
+      { t: 'Versión app', ro: true, get: d => d.app_version ? d.app_version + (C.app_min && Panel.cmpVer(d.app_version, C.app_min) < 0 ? ' ⚠ atrasada' : '') : 'anterior a 1.1' }, { t: 'Configuración', ro: true, get: d => !d.visto_en ? 'sin dato' : String(d.config_rev) === String(C.rev) ? 'al día' : '⚠ atrasada' },
+      { t: 'Última conexión', ro: true, get: d => d.visto_en ? new Date(d.visto_en).toLocaleString('es-CL', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—' }, { k: 'activo', t: 'Autorizado', op: SINO }],
   };
   const FILAS = { sedes: () => C.t.Sedes, personas: () => C.t.Usuarios, camaras: () => C.t.Activos, tareas: () => C.t.Tareas.filter(t => t.plantilla_id === C.pl), reglas: () => C.t.Reglas, parametros: () => C.t.Parametros, equipos: () => C.t.Dispositivos };
   const plantilla = () => C.t.Plantillas.find(p => p.plantilla_id === C.pl);
@@ -65,7 +67,9 @@
     if (C.sec === 'reglas') h += '<p class="ayuda">Activa o desactiva cada regla y ajusta sus parámetros. Las tareas no críticas nunca generan alertas propias: solo aparecen en el reporte de cierre.</p>' + grilla('reglas', { borrar: true }) +
       '<p><select id="tipoRegla">' + Object.keys(C.tipos).map(t => '<option>' + t + '</option>').join('') + '</select> <button class="sec" data-add="reglas">+ Agregar regla para una sede específica</button></p>';
     if (C.sec === 'telegram') h += vTelegram();
-    if (C.sec === 'equipos') h += '<p class="ayuda">Celulares registrados con la clave de equipos. Si un celular se pierde, márcalo como no autorizado.</p>' + grilla('equipos');
+    if (C.sec === 'equipos') h += '<p class="ayuda">Celulares registrados con la clave de equipos. Si un celular se pierde, márcalo como no autorizado.</p>' +
+      '<p class="ayuda">Cada celular baja los cambios de configuración y la versión nueva de la app cuando se abre con señal (y cada 2 minutos mientras está abierto). Aquí se ve qué tiene cada uno. <b>Forzar actualización</b> hace que ningún celular con señal pueda seguir usando una versión de la app anterior a la publicada.</p>' +
+      '<p><button class="sec" id="forzar">Forzar actualización en los equipos</button> <button class="sec" id="verEquipos">Volver a consultar</button> <span class="ayuda">Versión mínima exigida: <b>' + esc(C.app_min || 'ninguna') + '</b> · configuración actual: <b>' + esc(C.rev || '—') + '</b></span></p>' + grilla('equipos');
     if (C.sec === 'parametros') h += grilla('parametros');
     h += '</div>';
     if (C.sec !== 'telegram') h += '<div class="fijo-abajo"><button id="guardar"' + (C.sucio ? '' : ' disabled') + '>Guardar cambios</button><span class="ayuda">' + (C.sucio ? 'Hay cambios sin guardar.' : 'Sin cambios pendientes.') + ' Los celulares toman los cambios la próxima vez que tengan señal.</span></div>';
@@ -123,7 +127,7 @@
     catch (e) { C.msg = ['mal', 'No se guardó: ' + e.message]; }
     pintar();
   }
-  function recibir(r) { C.t = r.tablas; C.tipos = r.tipos_regla; C.tg = Object.assign(C.tg, r.telegram); C.sucio = false; }
+  function recibir(r) { C.rev = r.rev; C.app_min = r.app_min; C.t = r.tablas; C.tipos = r.tipos_regla; C.tg = Object.assign(C.tg, r.telegram); C.sucio = false; }
 
   /* ---------- eventos ---------- */
   const NUEVO = {
@@ -150,6 +154,21 @@
     }
     if (d.mv) { const fs = FILAS[d.g](), a = fs[d.i], b = fs[Number(d.i) + Number(d.mv)]; if (!b) return; const T = C.t.Tareas, ia = T.indexOf(a), ib = T.indexOf(b); T[ia] = b; T[ib] = a; C.sucio = true; return pintar(); }
     if (t.id === 'guardar') return guardar();
+    if (t.id === 'forzar' || t.id === 'verEquipos') {
+      if (C.sucio) { C.msg = ['mal', 'Primero guarda los cambios pendientes.']; return pintar(); }
+      try {
+        let r;
+        if (t.id === 'forzar') {
+          const v = ((await (await fetch('version.js?nocache=' + Date.now(), { cache: 'no-store' })).text()).match(/APP_VERSION\s*=\s*'([\d.]+)'/) || [])[1];
+          if (!v) throw new Error('no se pudo leer la versión publicada');
+          if (!confirm('Los celulares con una versión de la app anterior a la ' + v + ' tendrán que actualizarse antes de seguir. ¿Continuar?')) return;
+          r = await api({ action: 'admin_forzar', app: v }); if (!r.ok) throw new Error(r.error);
+          C.msg = ['ok', 'Listo. Versión mínima exigida: ' + v + '. Cada celular se actualiza al abrirse con señal, o en un par de minutos si ya está abierto.'];
+        } else { r = await api({ action: 'admin_get' }); if (!r.ok) throw new Error(r.error); C.msg = null; }
+        recibir(r);
+      } catch (e) { C.msg = ['mal', 'No se pudo: ' + e.message]; }
+      return pintar();
+    }
     if (t.id === 'nuevaPl') { const p = { plantilla_id: nuevoId('P'), nombre: 'Nuevo checklist', sede_id: (C.t.Sedes[0] || {}).sede_id || '', turno: 'AM', rol_id: '', version: 1, dias: 'LMXJVS', hora_envio: '08:00', hora_cierre: '10:00', tolerancia_cierre_min: 15, activa: 'SI' }; C.t.Plantillas.push(p); C.pl = p.plantilla_id; C.sucio = true; return pintar(); }
     if (t.id === 'dupPl') {
       const p = plantilla(), sede = document.querySelector('#sedeDup').value, np = Object.assign({}, p, { plantilla_id: nuevoId('P'), sede_id: sede, version: 1, nombre: p.nombre + (sede === p.sede_id ? ' (copia)' : '') }), mapa = {};

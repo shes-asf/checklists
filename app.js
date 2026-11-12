@@ -38,14 +38,50 @@
   const hecha = i => /^(HECHA|HECHA_ATRASO|NO_APLICA)$/.test(i.estado);
   const visibles = () => ejecuciones().filter(e => S.usuario.ve_toda_la_sede || !e.rol_id || e.rol_id === '*' || e.rol_id === S.usuario.rol_id);
 
+  /* ---------------- Versión de la app ---------------- */
+  // La app queda guardada en el celular para funcionar sin señal. Con señal, compara su versión con la publicada y con la
+  // mínima que exige el servidor; si hay una más nueva se actualiza sola (lo pendiente de envío no se pierde).
+  const VER = self.APP_VERSION || '0';
+  const cmpVer = (a, b) => { const x = String(a || '0').split('.').map(Number), y = String(b || '0').split('.').map(Number); for (let k = 0; k < 4; k++) { const d = (x[k] || 0) - (y[k] || 0); if (d) return d > 0 ? 1 : -1; } return 0; };
+  const guardia = { get: () => { try { return JSON.parse(sessionStorage.getItem('act') || '{}'); } catch (e) { return {}; } }, set: v => { try { v ? sessionStorage.setItem('act', JSON.stringify(v)) : sessionStorage.removeItem('act'); } catch (e) { } } };
+  async function versionPublicada() {
+    try { const r = await fetch('version.js?nocache=' + Date.now(), { cache: 'no-store' }); return r.ok ? ((await r.text()).match(/APP_VERSION\s*=\s*'([\d.]+)'/) || [])[1] || '' : ''; } catch (e) { return ''; }
+  }
+  const obligatoria = () => !!(S.estado && S.estado.app_min && cmpVer(VER, S.estado.app_min) < 0);
+  async function revisarVersion(manual) {
+    if (!navigator.onLine) return false;
+    const pub = await versionPublicada(), min = (S.estado && S.estado.app_min) || '';
+    const meta = pub && cmpVer(VER, pub) < 0 ? pub : obligatoria() ? min : '';
+    S.verNueva = meta; if (!meta) { guardia.set(null); return false; }
+    if (S.ocupado || S.deshacer) return false; // en medio de una foto, un PDF o una respuesta: se reintenta en la próxima pasada
+    if (!manual && !obligatoria() && S.usuario && S.vista === 'checklist') { barra(); return false; } // no se interrumpe a quien está respondiendo
+    return actualizarApp(meta, manual);
+  }
+  async function actualizarApp(meta, manual) {
+    const g = guardia.get(), n = g.v === meta && !manual ? g.n || 0 : 0;
+    if (n >= 2) { S.sinBajar = meta; barra(); return false; } // ya se intentó: no se recarga en círculo
+    guardia.set({ v: meta, n: n + 1 });
+    S.ocupado = 'Actualizando la app…'; pintar();
+    try {
+      const reg = 'serviceWorker' in navigator && await navigator.serviceWorker.getRegistration();
+      if (reg) {
+        const listo = new Promise(ok => { navigator.serviceWorker.addEventListener('controllerchange', ok, { once: true }); setTimeout(ok, 20000); });
+        await reg.update();
+        if (reg.installing || reg.waiting) await listo;
+      }
+    } catch (e) { }
+    location.reload(); return true;
+  }
+
   /* ---------------- Sincronización ---------------- */
   async function refrescar() {
     if (!S.equipo || !navigator.onLine) return;
     try {
-      const t0 = Date.now(), r = await apiPost({ action: 'estado', equipo: S.equipo.token });
+      const t0 = Date.now(), r = await apiPost({ action: 'estado', equipo: S.equipo.token, app: VER });
       if (!r.ok) { if (r.error === 'EQUIPO_NO_REGISTRADO') { S.aviso = 'Este equipo fue desactivado. Pide la clave de equipos para registrarlo de nuevo.'; await Local.del('equipo'); S.equipo = null; } return pintar(); }
       r._desfase = Math.round((Date.now() + (Date.now() - t0) / 2 - new Date(r.ahora).getTime()) / 60000); // reloj del celular vs servidor
-      S.estado = r; await Local.set('estado', r); limpiarViejos(); if (!S.borrando) pintar(true);
+      r._bajado = Date.now(); S.estado = r; await Local.set('estado', r); limpiarViejos(); if (!S.borrando) pintar(true);
+      revisarVersion();
     } catch (e) { /* sin señal: se sigue con lo guardado */ }
   }
   async function enviar() {
@@ -216,7 +252,8 @@
     const b = $('#barra'); if (!b) return;
     b.className = 'barra ' + (S.enLinea ? 'ok' : 'off');
     b.innerHTML = '<span class="punto"></span>' + (S.enLinea ? 'Con señal' : 'Sin señal') + (S.pend ? ' · <b>' + S.pend + ' pendiente' + (S.pend > 1 ? 's' : '') + ' de envío</b>' : ' · todo enviado') +
-      (S.estado && Math.abs(S.estado._desfase || 0) > 5 ? ' · ⚠ hora del celular desfasada ' + Math.abs(S.estado._desfase) + ' min' : '');
+      (S.estado && Math.abs(S.estado._desfase || 0) > 5 ? ' · ⚠ hora del celular desfasada ' + Math.abs(S.estado._desfase) + ' min' : '') +
+      (S.verNueva && !S.ocupado ? ' · <a data-a="actualizar-app">' + (S.sinBajar ? 'Versión nueva pendiente: reintentar' : 'Actualizar la app') + '</a>' : '');
   }
   function pintarAviso() {
     const d = $('#snack'); if (!d) return;
@@ -227,6 +264,7 @@
     let h = '<div id="barra"></div>';
     if (S.aviso) { h += '<div class="aviso" data-a="cerrar-aviso">' + esc(S.aviso) + '</div>'; }
     if (S.ocupado) h += '<div class="centro"><div class="rueda"></div><p>' + esc(S.ocupado) + '</p></div>';
+    else if (S.equipo && obligatoria() && S.enLinea) h += '<div class="tarjeta centro"><h1>Hay que actualizar la app</h1><p>Esta versión (' + esc(VER) + ') ya no se acepta. Lo que tengas pendiente de envío no se pierde.</p><button class="btn" data-a="actualizar-app">Actualizar ahora</button></div>';
     else if (!S.equipo) h += vRegistro();
     else if (!S.estado) h += '<div class="centro"><p>Conéctate a internet una vez para descargar los checklists.</p><button class="btn" data-a="recargar">Reintentar</button></div>';
     else if (!S.usuario) h += S.pinDe ? vPin() : vQuien();
@@ -258,7 +296,7 @@
       h += '<button class="tarjeta lista ' + (cerrada ? 'cerrada' : '') + '" data-a="abrir" data-id="' + esc(e.ejecucion_id) + '"><div class="fila"><b>' + esc(e.plantilla) + '</b><span class="chip ' + (cerrada ? 'gris' : futura ? 'azul' : 'verde') + '">' + (cerrada ? 'Cerrado' : futura ? 'Desde ' + hhmm(e.envio_programado) : 'Abierto') + '</span></div>' +
         '<div class="progreso"><i style="width:' + (r.total ? Math.round(100 * (r.hechas) / r.total) : 0) + '%"></i></div><small>' + r.hechas + ' de ' + r.total + ' tareas · cierra a las ' + hhmm(e.hora_cierre) + '</small></button>';
     });
-    return h + '<p class="pie"><a data-a="recargar">Actualizar</a></p>';
+    return h + '<p class="pie"><a data-a="recargar">Actualizar ahora</a><br><small>App ' + esc(VER) + ' · configuración ' + esc(S.estado.rev || '—') + (S.estado._bajado ? ' · al día a las ' + hhmm(new Date(S.estado._bajado).toISOString()) : '') + '</small></p>';
   }
   function vTarea(i, ahora) {
     const b = S.borr[i.instancia_id] || {}, ok = hecha(i), futura = !ok && i.disponible_desde > ahora, atras = !ok && i.vence_a < ahora;
@@ -313,7 +351,11 @@
       catch (e) { S.aviso = /fetch|RED/.test(e.message) ? 'Sin conexión. Necesitas señal para registrar el equipo.' : e.message; }
       S.ocupado = ''; pintar();
     }
-    else if (a === 'recargar') { await refrescar(); enviar(); pintar(); }
+    else if (a === 'recargar' || a === 'actualizar-app') {
+      if (!navigator.onLine) { S.aviso = 'Sin señal. La app se actualiza sola cuando vuelva la conexión.'; return pintar(); }
+      S.ocupado = 'Buscando cambios…'; pintar(); await refrescar(); enviar(); S.ocupado = '';
+      if (!await revisarVersion(true)) { if (!S.aviso) S.aviso = S.verNueva ? 'La versión nueva todavía no se puede descargar. Reintenta en unos minutos.' : 'Estás al día: app ' + VER + ', configuración ' + ((S.estado || {}).rev || '—') + '.'; pintar(); }
+    }
     else if (a === 'quien') { S.pinDe = S.estado.usuarios.find(u => u.usuario_id === id); S.pin = ''; S.pinError = ''; pintar(); }
     else if (a === 'tecla') {
       const k = el.dataset.k;
@@ -354,11 +396,11 @@
   try { new BroadcastChannel('cola').onmessage = m => { S.pend = m.data.quedan; barra(); }; } catch (e) { }
   setInterval(() => { if (navigator.onLine) enviar(); }, 30000);
   setInterval(() => { refrescar(); }, 120000);
-  setInterval(() => { if (S.usuario && !S.ocupado) pintar(true); }, 60000); // refresca horas y atrasos
+  setInterval(() => { if (S.usuario && !S.ocupado) pintar(true); if (S.verNueva && !S.sinBajar) revisarVersion(); }, 60000); // refresca horas y atrasos; aplica la versión nueva al salir del checklist
 
   /* ---------------- Inicio ---------------- */
   (async function iniciar() {
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => { });
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(() => { });
     if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
     S.equipo = await Local.get('equipo') || null; S.estado = await Local.get('estado') || null; S.local = await Local.get('local') || S.local;
     S.pend = (await Cola.todo()).length;
@@ -366,7 +408,11 @@
     const enlace = new URLSearchParams(location.search).get('e'); // link del grupo de Telegram
     if (S.usuario && enlace && visibles().some(x => x.ejecucion_id === enlace)) { S.ejec = enlace; S.vista = 'checklist'; }
     for (const id of Object.keys(S.local.r)) if (!S.local.r[id].encolada) await encolar(id); // respuestas que quedaron sin encolar al cerrar la app
-    pintar(); await refrescar(); enviar();
+    if (S.equipo && S.estado && navigator.onLine) { // con señal, primero se bajan los cambios: no se trabaja con una configuración antigua
+      S.ocupado = 'Buscando cambios…'; pintar(); await Promise.race([refrescar(), new Promise(ok => setTimeout(ok, 8000))]); S.ocupado = '';
+      pintar(); revisarVersion();
+    } else { pintar(); await refrescar(); }
+    enviar();
     window.__app = { S, instancias, ejecuciones }; // para pruebas
   })();
 })();

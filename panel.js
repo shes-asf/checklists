@@ -34,5 +34,6 @@ const Panel = (() => {
     pintar(1);
   }
   function salir() { sesion = null; guardado.set('sesion', null); location.reload(); }
-  return { api, iniciar, salir, esc };
+  const cmpVer = (a, b) => { const x = String(a || '0').split('.').map(Number), y = String(b || '0').split('.').map(Number); for (let k = 0; k < 4; k++) { const d = (x[k] || 0) - (y[k] || 0); if (d) return d > 0 ? 1 : -1; } return 0; };
+  return { api, iniciar, salir, esc, cmpVer };
 })();
