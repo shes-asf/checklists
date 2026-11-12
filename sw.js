@@ -1,6 +1,6 @@
 // Service worker: deja la app disponible sin señal y envía la cola en segundo plano (Android/Chrome).
 importScripts('config.js', 'db.js');
-const VERSION = 'checklists-v1.0.0';
+const VERSION = 'checklists-v1.0.1';
 const ARCHIVOS = ['./', 'index.html', 'app.css', 'app.js', 'db.js', 'core.js', 'config.js', 'manifest.webmanifest', 'vendor/jspdf.umd.min.js', 'icons/icon-192.png', 'icons/icon-512.png'];
 self.addEventListener('install', e => e.waitUntil(caches.open(VERSION).then(c => c.addAll(ARCHIVOS)).then(() => self.skipWaiting())));
 self.addEventListener('activate', e => e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== VERSION).map(k => caches.delete(k)))).then(() => self.clients.claim())));

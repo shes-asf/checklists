@@ -182,11 +182,11 @@
     const fotos = []; for (const i of lista) for (const id of (i._fotos || [])) { const f = await Local.foto(id); if (f) fotos.push({ f, i }); }
     if (fotos.length) {
       doc.addPage(); y = M; doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(11, 61, 92); doc.text('Fotos (' + fotos.length + ')', M, y + 2); y += 8;
-      const an = 90, al = 60; let col = 0;
+      const an = 90, al = 100; let col = 0; // casilla de 90 x 100 mm: la foto se ajusta dentro sin deformarse (vertical u horizontal)
       for (const { f, i } of fotos) {
         if (col === 0) salto(al + 12);
         const x = M + col * (an + 6);
-        try { doc.addImage(await achicar(f.data), 'JPEG', x, y, an, al, undefined, 'FAST'); } catch (e) { }
+        try { const im = await achicar(f.data), k = Math.min(an / im.w, al / im.h), w = im.w * k, h = im.h * k; doc.addImage(im.url, 'JPEG', x + (an - w) / 2, y + (al - h) / 2, w, h, undefined, 'FAST'); } catch (e) { }
         doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(60); doc.text(doc.splitTextToSize(i.texto, an)[0], x, y + al + 4);
         col = 1 - col; if (col === 0) y += al + 10;
       }
@@ -195,7 +195,7 @@
     return { nombre: ej.fecha + '_' + l.hhmm.replace(':', '') + '_' + limpio(S.estado.sede.nombre) + '_' + limpio(ej.plantilla), data: doc.output('datauristring').split(',')[1] };
   }
   function achicar(b64) { // las fotos van más livianas dentro del PDF
-    return new Promise(ok => { const img = new Image(); img.onload = () => { const e = Math.min(1, 800 / Math.max(img.width, img.height)), c = document.createElement('canvas'); c.width = img.width * e; c.height = img.height * e; c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); ok(c.toDataURL('image/jpeg', 0.6)); }; img.src = 'data:image/jpeg;base64,' + b64; });
+    return new Promise(ok => { const img = new Image(); img.onload = () => { const e = Math.min(1, 800 / Math.max(img.width, img.height)), c = document.createElement('canvas'); c.width = img.width * e; c.height = img.height * e; c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); ok({ url: c.toDataURL('image/jpeg', 0.6), w: c.width, h: c.height }); }; img.src = 'data:image/jpeg;base64,' + b64; });
   }
   async function cerrar(ej) {
     S.ocupado = 'Armando el PDF…'; pintar();
