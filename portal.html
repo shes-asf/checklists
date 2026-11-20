@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="es-CL">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0b3d5c">
+<title>Checklists de Operaciones</title>
+<link rel="icon" href="icons/icon-192.png">
+<style>
+:root{--azul:#0b3d5c;--azul2:#e6eef3;--verde:#12805c;--gris:#5b6770;--borde:#d5dde3;--fondo:#f3f6f8}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--fondo);color:#17222b;line-height:1.4}
+header{background:var(--azul);color:#fff;padding:26px 20px 22px;text-align:center}
+header img{width:64px;height:64px;border-radius:14px;display:block;margin:0 auto 10px}
+header h1{margin:0;font-size:1.5rem}
+header p{margin:6px 0 0;opacity:.85;font-size:.95rem}
+main{max-width:980px;margin:0 auto;padding:22px 16px 30px;display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
+a.boton{display:flex;flex-direction:column;gap:8px;background:#fff;border:1px solid var(--borde);border-radius:18px;padding:24px 22px;text-decoration:none;color:inherit;min-height:190px;box-shadow:0 1px 2px rgba(11,61,92,.06)}
+a.boton:hover,a.boton:focus-visible{border-color:var(--azul);box-shadow:0 4px 14px rgba(11,61,92,.14);outline:none}
+a.boton .ico{width:52px;height:52px;border-radius:14px;background:var(--azul2);color:var(--azul);display:grid;place-items:center}
+a.boton .ico svg{width:28px;height:28px}
+a.boton h2{margin:6px 0 0;font-size:1.3rem;color:var(--azul)}
+a.boton p{margin:0;color:var(--gris);font-size:.95rem;flex:1}
+a.boton span{font-weight:700;color:var(--azul)}
+a.boton.principal{background:var(--azul);border-color:var(--azul);color:#fff}
+a.boton.principal h2,a.boton.principal span{color:#fff}
+a.boton.principal p{color:#d5e3ec}
+a.boton.principal .ico{background:rgba(255,255,255,.16);color:#fff}
+footer{text-align:center;color:var(--gris);font-size:.82rem;padding:0 16px 26px}
+</style>
+</head>
+<body>
+<header>
+  <img src="icons/icon-192.png" alt="">
+  <h1>Checklists de Operaciones</h1>
+  <p id="empresa">Elige a dónde quieres entrar</p>
+</header>
+<main>
+  <a class="boton principal" href="index.html">
+    <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3 8-8"/><path d="M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9"/></svg></div>
+    <h2>Responder checklists</h2>
+    <p>Para quien hace el checklist del turno. Entra con tu nombre y tu PIN de 4 dígitos. Funciona sin señal.</p>
+    <span>Abrir la app ›</span>
+  </a>
+  <a class="boton" href="dashboard.html">
+    <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10"/><path d="M10 20V4"/><path d="M16 20v-7"/><path d="M22 20H2"/></svg></div>
+    <h2>Dashboard</h2>
+    <p>Cumplimiento por sede, tarea y persona, alertas y detalle de cada checklist con sus fotos. Se entra con correo y código.</p>
+    <span>Ver resultados ›</span>
+  </a>
+  <a class="boton" href="configuracion.html">
+    <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3h0a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5h0a1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9v0a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></div>
+    <h2>Configuración</h2>
+    <p>Sedes, personas, checklists, plazos, alertas y sus destinatarios. Solo para administradores.</p>
+    <span>Configurar ›</span>
+  </a>
+</main>
+<footer>Guarda esta página en tus favoritos: es la entrada a todo el sistema. <span id="ver"></span></footer>
+<script src="version.js"></script>
+<script>document.getElementById('ver').textContent = self.APP_VERSION ? 'Versión ' + self.APP_VERSION + '.' : '';</script>
+</body>
+</html>

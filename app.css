@@ -62,3 +62,5 @@ button:active{filter:brightness(.9)}
 .cam-x{background:none;color:#fff;font-size:1rem;justify-self:start;padding:12px}
 .cam-ok{width:78px;height:78px;border-radius:50%;background:#fff;border:6px solid #9fb3bf}
 @media (min-width:520px){.personas{grid-template-columns:1fr 1fr}}
+
+.vencido{color:#be1e1e}

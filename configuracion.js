@@ -19,7 +19,8 @@
   };
   const COLS = {
     sedes: [{ k: 'nombre', t: 'Nombre', cls: 'ancho' }, { k: 'tipo', t: 'Tipo', op: [['bodega', 'Bodega'], ['local', 'Local'], ['faena', 'Faena']] }, { k: 'centro_costo', t: 'Centro de costo' },
-      { k: 'telegram_chat_id', t: 'ID grupo de Telegram' }, { k: 'telegram_chat_escalamiento', t: 'ID chat de escalamiento' }, { k: 'clave_equipos', t: 'Clave de equipos' }, { k: 'activa', t: 'Activa', op: SINO }],
+      { k: 'telegram_chat_id', t: 'ID grupo de Telegram' }, { k: 'telegram_chat_escalamiento', t: 'ID chat de escalamiento' }, { k: 'clave_equipos', t: 'Clave de equipos' },
+      { k: 'emails_reporte', t: 'Correos del informe PDF', cls: 'ancho', ph: () => 'a@empresa.cl, b@empresa.cl' }, { k: 'emails_escalamiento', t: 'Correos de escalamiento', cls: 'ancho', ph: () => 'opcional' }, { k: 'activa', t: 'Activa', op: SINO }],
     personas: [{ k: 'nombre', t: 'Nombre', cls: 'ancho' }, { t: 'Sede', op: () => sedesOp(true), get: u => usSede(u).sede_id || '', set: (u, v) => usSede(u, true).sede_id = v },
       { t: 'Rol', op: () => ops(C.t.Roles, 'rol_id', 'nombre'), get: u => usSede(u).rol_id || '', set: (u, v) => usSede(u, true).rol_id = v },
       { k: 'pin_nuevo', t: 'PIN nuevo (4 dígitos)', cls: 'corto', ph: u => u.tiene_pin === 'SI' ? '••••' : 'sin PIN' }, { k: 'email', t: 'Email (solo para el panel)' }, { k: 'telegram_user_id', t: 'ID de Telegram (opcional)' }, { k: 'activo', t: 'Activo', op: SINO }],
@@ -33,7 +34,9 @@
       { k: 'cada_n_horas', t: 'Cada N h', cls: 'corto' }, { k: 'ventana_inicio', t: 'Desde', tipo: 'time' }, { k: 'ventana_fin', t: 'Hasta', tipo: 'time' }, { k: 'dias_semana', t: 'Días (LMXJVSD)', cls: 'corto' }, { k: 'dia_mes', t: 'Día del mes', cls: 'corto' },
       { k: 'activo_id', t: 'Cámara / equipo', op: t => ops(C.t.Activos.filter(a => a.sede_id === (plantilla() || {}).sede_id), 'activo_id', 'nombre', '—') }, { k: 'activa', t: 'Activa', op: SINO }],
     reglas: [{ k: 'tipo', t: 'Regla', ro: true }, { t: 'Qué hace', ro: true, get: r => (C.tipos[r.tipo] || [r.descripcion])[0] }, { k: 'activa', t: 'Activa', op: SINO }, { k: 'sede_id', t: 'Aplica a', op: () => sedesOp(true) },
-      { k: 'parametro', t: 'Parámetro 1', cls: 'corto', nota: r => (C.tipos[r.tipo] || [])[1] }, { k: 'parametro2', t: 'Parámetro 2', cls: 'corto', nota: r => (C.tipos[r.tipo] || [])[2] }],
+      { k: 'parametro', t: 'Parámetro 1', cls: 'corto', nota: r => (C.tipos[r.tipo] || [])[1] }, { k: 'parametro2', t: 'Parámetro 2', cls: 'corto', nota: r => (C.tipos[r.tipo] || [])[2] },
+      { k: 'canal', t: 'Canal', op: r => /^(C3|ENVIAR_PDF)$/.test(r.tipo) ? [['', 'Telegram']] : [['', 'Telegram'], ['CORREO', 'Correo'], ['AMBOS', 'Telegram y correo']] },
+      { k: 'destinatarios', t: 'Destinatarios (correos)', cls: 'ancho', ph: r => /^(C3|ENVIAR_PDF)$/.test(r.tipo) ? 'el informe por correo va en Sedes' : 'vacío = los correos de la sede' }],
     parametros: [{ k: 'clave', t: 'Parámetro', ro: true }, { k: 'valor', t: 'Valor', cls: 'ancho' }, { k: 'descripcion', t: 'Para qué sirve', ro: true }],
     equipos: [{ k: 'nombre', t: 'Equipo', ro: true }, { t: 'Sede', ro: true, get: d => (C.t.Sedes.find(s => s.sede_id === d.sede_id) || {}).nombre || d.sede_id }, { t: 'Registrado', ro: true, get: d => String(d.registrado_en).slice(0, 10) },
       { t: 'Versión app', ro: true, get: d => d.app_version ? d.app_version + (C.app_min && Panel.cmpVer(d.app_version, C.app_min) < 0 ? ' ⚠ atrasada' : '') : 'anterior a 1.1' }, { t: 'Configuración', ro: true, get: d => !d.visto_en ? 'sin dato' : String(d.config_rev) === String(C.rev) ? 'al día' : '⚠ atrasada' },
@@ -60,11 +63,12 @@
     let h = '<div class="tabs">' + SECCIONES.map(s => '<button data-sec="' + s[0] + '" class="' + (C.sec === s[0] ? 'on' : '') + '">' + s[1] + '</button>').join('') + '</div>';
     if (C.msg) h += '<div class="aviso ' + C.msg[0] + '">' + esc(C.msg[1]) + '</div>';
     h += '<div class="caja">';
-    if (C.sec === 'sedes') h += '<p class="ayuda">Cada sede tiene su grupo de Telegram, su centro de costo y su <b>clave de equipos</b> (la que se escribe una sola vez en cada celular). Para agregar una sede: créala aquí, agrega sus personas y cámaras, y en “Checklists y tareas” duplica una plantilla hacia la sede nueva.</p>' + grilla('sedes', { agregar: 'Agregar sede', borrar: true });
+    if (C.sec === 'sedes') h += '<p class="ayuda">Cada sede tiene su grupo de Telegram, su centro de costo y su <b>clave de equipos</b> (la que se escribe una sola vez en cada celular). En <b>Correos del informe PDF</b> escribe, separados por coma, quiénes reciben el informe de cada checklist al cerrarse (también cuando nadie lo cierra); vacío = no se envía correo. Para agregar una sede: créala aquí, agrega sus personas y cámaras, y en “Checklists y tareas” duplica una plantilla hacia la sede nueva.</p>' + grilla('sedes', { agregar: 'Agregar sede', borrar: true });
     if (C.sec === 'personas') h += '<p class="ayuda">En el celular cada persona entra con su nombre y su PIN. El email solo se necesita para quienes entran al dashboard o a esta configuración (jefes, operaciones, administradores). El PIN no se muestra: escribe uno nuevo para cambiarlo.</p>' + grilla('personas', { agregar: 'Agregar persona', borrar: true });
     if (C.sec === 'camaras') h += '<p class="ayuda">Rango aceptado de cada cámara o equipo. Una lectura fuera de este rango dispara la regla T1. Ej.: refrigerado 0 a 4 °C; congelado −25 a −18 °C.</p>' + grilla('camaras', { agregar: 'Agregar cámara o equipo', borrar: true });
     if (C.sec === 'checklists') h += vChecklists();
-    if (C.sec === 'reglas') h += '<p class="ayuda">Activa o desactiva cada regla y ajusta sus parámetros. Las tareas no críticas nunca generan alertas propias: solo aparecen en el reporte de cierre.</p>' + grilla('reglas', { borrar: true }) +
+    if (C.sec === 'reglas') h += '<p class="ayuda">Activa o desactiva cada regla y ajusta sus parámetros. Las tareas no críticas nunca generan alertas propias: solo aparecen en el informe de cierre.</p>' +
+      '<p class="ayuda"><b>Canal:</b> cada alerta puede ir por Telegram, por correo o por ambos. Por Telegram llega al grupo de la sede (lo escalado, a su chat de escalamiento). Por correo llega a los destinatarios de la regla; si los dejas vacíos, a los correos de la sede. Los botones <i>Me hago cargo / Ya resuelto / Escalar</i> solo existen en Telegram. El <b>informe PDF por correo</b> no se configura aquí: sale en cada cierre a los "Correos del informe PDF" de la sede.</p>' + grilla('reglas', { borrar: true }) +
       '<p><select id="tipoRegla">' + Object.keys(C.tipos).map(t => '<option>' + t + '</option>').join('') + '</select> <button class="sec" data-add="reglas">+ Agregar regla para una sede específica</button></p>';
     if (C.sec === 'telegram') h += vTelegram();
     if (C.sec === 'equipos') h += '<p class="ayuda">Celulares registrados con la clave de equipos. Si un celular se pierde, márcalo como no autorizado.</p>' +
@@ -75,6 +79,22 @@
     if (C.sec !== 'telegram') h += '<div class="fijo-abajo"><button id="guardar"' + (C.sucio ? '' : ' disabled') + '>Guardar cambios</button><span class="ayuda">' + (C.sucio ? 'Hay cambios sin guardar.' : 'Sin cambios pendientes.') + ' Los celulares toman los cambios la próxima vez que tengan señal.</span></div>';
     main.innerHTML = h;
   }
+  // Plazo fijo: a la hora "inicio del turno + minutos" el checklist debe estar completo; si no, sale el aviso de incumplimiento.
+  const aMin = h => { const m = /^(\d{1,2}):(\d\d)$/.exec(String(h || '').trim()); return m ? Number(m[1]) * 60 + Number(m[2]) : null; };
+  const aHora = m => String(Math.floor(((m % 1440) + 1440) % 1440 / 60)).padStart(2, '0') + ':' + String(((m % 1440) + 1440) % 1440 % 60).padStart(2, '0');
+  function plazoDe(p) {
+    const n = Number(String(p.plazo_min || '').replace(',', '.')); if (!n || n <= 0) return null;
+    const env = aMin(p.hora_envio), ini = aMin(p.hora_inicio_turno) ?? env; let cie = aMin(p.hora_cierre); if (env == null || cie == null || ini == null) return null;
+    if (cie <= env) cie += 1440; const lim = cie + (Number(p.tolerancia_cierre_min === '' || p.tolerancia_cierre_min == null ? 15 : p.tolerancia_cierre_min) || 0);
+    return { plazo: ini + n, envio: env, limite: lim };
+  }
+  function textoPlazo(p) {
+    const x = plazoDe(p);
+    if (!x) return '<b>Plazo fijo</b> (opcional): si indicas los minutos, el checklist debe estar <b>completo</b> a esa hora contada desde el inicio del turno (vacío = la hora de envío). Al completarse se cierra solo y sale el informe; si a esa hora falta algo, sale el aviso de incumplimiento. Sin minutos, el checklist funciona como siempre.';
+    if (x.plazo <= x.envio) return '<span style="color:#c0392b"><b>Plazo fijo mal definido:</b> vence a las ' + aHora(x.plazo) + ', antes de que el checklist quede disponible.</span>';
+    if (x.plazo > x.limite) return '<span style="color:#c0392b"><b>Plazo fijo mal definido:</b> vence a las ' + aHora(x.plazo) + ', después del cierre del checklist (' + aHora(x.limite) + ').</span>';
+    return '<b>Plazo fijo:</b> debe estar completo a las <b>' + aHora(x.plazo) + '</b>. Si falta algo a esa hora sale el aviso de incumplimiento' + (x.limite > x.plazo ? '; se puede completar fuera de plazo hasta las ' + aHora(x.limite) + '.' : ' y el checklist se cierra.') + ' El recordatorio de "no iniciado" solo sale si cae al menos 10 minutos antes.';
+  }
   function vChecklists() {
     if (!C.pl || !plantilla()) C.pl = (C.t.Plantillas[0] || {}).plantilla_id || '';
     const p = plantilla(), nomSede = id => (C.t.Sedes.find(s => s.sede_id === id) || {}).nombre || id;
@@ -83,7 +103,9 @@
     if (!p) return h + '<p class="ayuda">Aún no hay checklists.</p>';
     const campo = (k, t, tipo, o) => '<label>' + t + (o ? '<select data-pl="' + k + '">' + o.map(x => '<option value="' + esc(x[0]) + '"' + (x[0] === String(p[k]) ? ' selected' : '') + '>' + esc(x[1]) + '</option>').join('') + '</select>' : '<input data-pl="' + k + '" type="' + (tipo || 'text') + '" value="' + esc(p[k]) + '">') + '</label>';
     h += '<div class="form">' + campo('nombre', 'Nombre') + campo('sede_id', 'Sede', '', sedesOp()) + campo('turno', 'Turno', '', [['AM', 'AM'], ['PM', 'PM'], ['NOCHE', 'Noche']]) + campo('rol_id', 'Quién lo responde', '', ops(C.t.Roles, 'rol_id', 'nombre', 'Cualquiera de la sede')) +
-      campo('hora_envio', 'Hora en que se envía el link', 'time') + campo('hora_cierre', 'Hora de cierre', 'time') + campo('tolerancia_cierre_min', 'Margen después del cierre (min)') + campo('dias', 'Días (LMXJVSD)') + campo('activa', 'Activo', '', SINO) + '</div>' +
+      campo('hora_envio', 'Hora en que se envía el link', 'time') + campo('hora_cierre', 'Hora de cierre', 'time') + campo('tolerancia_cierre_min', 'Margen después del cierre (min)') + campo('dias', 'Días (LMXJVSD)') + campo('activa', 'Activo', '', SINO) +
+      campo('hora_inicio_turno', 'Plazo fijo: inicio del turno', 'time') + campo('plazo_min', 'Plazo fijo: minutos para completarlo') + '</div>' +
+      '<p class="ayuda">' + textoPlazo(p) + '</p>' +
       '<p class="ayuda">Versión ' + esc(p.version || 1) + ' · ' + FILAS.tareas().length + ' tareas. Al guardar un cambio sube la versión; lo ya respondido no se altera. <b>Hora objetivo</b> vacía = la tarea vence al cierre del checklist. <b>Cada N horas</b>: indica N y el rango Desde–Hasta. <b>Semanal</b>: días (ej. L o LXV). <b>Mensual</b>: día del mes.</p>' +
       '<datalist id="secciones">' + C.t.Secciones.filter(s => s.plantilla_id === C.pl).map(s => '<option value="' + esc(s.nombre) + '">').join('') + '</datalist>' + grilla('tareas', { agregar: 'Agregar tarea', borrar: true, mover: true });
     return h;
@@ -114,6 +136,11 @@
     const claves = C.t.Sedes.map(s => String(s.clave_equipos).trim().toLowerCase()).filter(x => x);
     if (new Set(claves).size !== claves.length) return 'Dos sedes tienen la misma clave de equipos.';
     if (C.t.Sedes.some(s => !String(s.nombre).trim())) return 'Hay una sede sin nombre.';
+    const malos = t => String(t || '').split(/[\s,;]+/).filter(x => x && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x));
+    for (const s of C.t.Sedes) { const m = malos(s.emails_reporte).concat(malos(s.emails_escalamiento)); if (m.length) return 'Correo mal escrito en la sede ' + s.nombre + ': ' + m[0]; }
+    for (const r of C.t.Reglas) { const m = malos(r.destinatarios); if (m.length) return 'Correo mal escrito en la regla ' + r.tipo + ': ' + m[0]; }
+    for (const r of C.t.Reglas) if (/CORREO|AMBOS/.test(r.canal || '') && !String(r.destinatarios || '').trim() && !C.t.Sedes.some(s => String(s.emails_reporte || '').trim())) return 'La regla ' + r.tipo + ' va por correo, pero no tiene destinatarios ni hay correos en ninguna sede.';
+    for (const p of C.t.Plantillas) { const x = plazoDe(p); if (x && (x.plazo <= x.envio || x.plazo > x.limite)) return 'El plazo fijo de "' + p.nombre + '" queda fuera del horario del checklist (vence a las ' + aHora(x.plazo) + ').'; }
     const malPin = C.t.Usuarios.find(u => u.pin_nuevo && !/^\d{4}$/.test(u.pin_nuevo)); if (malPin) return 'El PIN de ' + malPin.nombre + ' debe tener exactamente 4 dígitos.';
     const sinSede = C.t.Usuarios.find(u => !usSede(u).sede_id); if (sinSede) return 'Falta la sede de ' + (sinSede.nombre || 'una persona') + '.';
     const malaHora = C.t.Plantillas.find(p => !Core.normHora(p.hora_envio) || !Core.normHora(p.hora_cierre)); if (malaHora) return 'El checklist "' + malaHora.nombre + '" necesita hora de envío y de cierre.';
@@ -131,11 +158,11 @@
 
   /* ---------- eventos ---------- */
   const NUEVO = {
-    sedes: () => ({ sede_id: nuevoId('S'), nombre: '', tipo: 'local', centro_costo: '', telegram_chat_id: '', telegram_chat_escalamiento: '', zona_horaria: 'America/Santiago', clave_equipos: 'sede-' + Math.random().toString(36).slice(2, 8), activa: 'SI' }),
+    sedes: () => ({ sede_id: nuevoId('S'), nombre: '', tipo: 'local', centro_costo: '', telegram_chat_id: '', telegram_chat_escalamiento: '', zona_horaria: 'America/Santiago', clave_equipos: 'sede-' + Math.random().toString(36).slice(2, 8), activa: 'SI', emails_reporte: '', emails_escalamiento: '' }),
     personas: () => ({ usuario_id: nuevoId('U'), nombre: '', email: '', telefono: '', telegram_user_id: '', pin_nuevo: '', activo: 'SI', tiene_pin: 'NO' }),
     camaras: () => ({ activo_id: nuevoId('ACT'), sede_id: (C.t.Sedes[0] || {}).sede_id || '', nombre: '', tipo: 'camara_refrigerada', codigo_qr: '', activo: 'SI' }),
     tareas: () => { const ult = FILAS.tareas().slice(-1)[0] || {}; return { tarea_id: nuevoId('T'), plantilla_id: C.pl, seccion_id: ult.seccion_id || '', orden: 999, texto: '', tipo_respuesta: 'SI_NO', unidad: '', foto: 'NO', critica: 'NO', critico_estados: '', frecuencia: 'DIARIA', cada_n_horas: '', ventana_inicio: '', ventana_fin: '', dias_semana: '', dia_mes: '', hora_objetivo: '', tolerancia_min: 15, activo_id: '', activa: 'SI' }; },
-    reglas: () => ({ regla_id: nuevoId('R'), tipo: document.querySelector('#tipoRegla').value, sede_id: (C.t.Sedes[0] || {}).sede_id || '*', parametro: '', parametro2: '', activa: 'SI', descripcion: '' }),
+    reglas: () => ({ regla_id: nuevoId('R'), tipo: document.querySelector('#tipoRegla').value, sede_id: (C.t.Sedes[0] || {}).sede_id || '*', parametro: '', parametro2: '', activa: 'SI', descripcion: '', canal: '', destinatarios: '' }),
   };
   const TABLA = { sedes: 'Sedes', personas: 'Usuarios', camaras: 'Activos', tareas: 'Tareas', reglas: 'Reglas' };
   main.addEventListener('change', e => {
@@ -169,7 +196,7 @@
       } catch (e) { C.msg = ['mal', 'No se pudo: ' + e.message]; }
       return pintar();
     }
-    if (t.id === 'nuevaPl') { const p = { plantilla_id: nuevoId('P'), nombre: 'Nuevo checklist', sede_id: (C.t.Sedes[0] || {}).sede_id || '', turno: 'AM', rol_id: '', version: 1, dias: 'LMXJVS', hora_envio: '08:00', hora_cierre: '10:00', tolerancia_cierre_min: 15, activa: 'SI' }; C.t.Plantillas.push(p); C.pl = p.plantilla_id; C.sucio = true; return pintar(); }
+    if (t.id === 'nuevaPl') { const p = { plantilla_id: nuevoId('P'), nombre: 'Nuevo checklist', sede_id: (C.t.Sedes[0] || {}).sede_id || '', turno: 'AM', rol_id: '', version: 1, dias: 'LMXJVS', hora_envio: '08:00', hora_cierre: '10:00', tolerancia_cierre_min: 15, activa: 'SI', hora_inicio_turno: '', plazo_min: '' }; C.t.Plantillas.push(p); C.pl = p.plantilla_id; C.sucio = true; return pintar(); }
     if (t.id === 'dupPl') {
       const p = plantilla(), sede = document.querySelector('#sedeDup').value, np = Object.assign({}, p, { plantilla_id: nuevoId('P'), sede_id: sede, version: 1, nombre: p.nombre + (sede === p.sede_id ? ' (copia)' : '') }), mapa = {};
       C.t.Secciones.filter(s => s.plantilla_id === p.plantilla_id).forEach(s => { mapa[s.seccion_id] = nuevoId('SEC'); C.t.Secciones.push(Object.assign({}, s, { seccion_id: mapa[s.seccion_id], plantilla_id: np.plantilla_id })); });

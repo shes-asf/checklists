@@ -18,7 +18,7 @@
       const id = Core.idEjecucion(f, p.plantilla_id);
       if (ids.has(id) || !Core.aplicaHoy(p, f)) return;
       const v = Core.ventana(p, f, TZ()); if (ahora >= v.limite) return;
-      out.push({ ejecucion_id: id, plantilla_id: p.plantilla_id, plantilla: p.nombre, sede_id: p.sede_id, fecha: f, turno: p.turno, rol_id: p.rol_id, estado: 'ABIERTA', envio_programado: v.envio.toISOString(), hora_cierre: v.cierre.toISOString(), limite: v.limite.toISOString(), _local: true });
+      out.push({ ejecucion_id: id, plantilla_id: p.plantilla_id, plantilla: p.nombre, sede_id: p.sede_id, fecha: f, turno: p.turno, rol_id: p.rol_id, estado: 'ABIERTA', envio_programado: v.envio.toISOString(), hora_cierre: v.cierre.toISOString(), limite: v.limite.toISOString(), plazo: v.plazo ? v.plazo.toISOString() : '', _local: true });
     });
     return out.sort((a, b) => a.envio_programado < b.envio_programado ? -1 : 1);
   }
@@ -36,6 +36,13 @@
     return lista.sort((a, b) => a.orden - b.orden || (a.programada_para < b.programada_para ? -1 : 1));
   }
   const hecha = i => /^(HECHA|HECHA_ATRASO|NO_APLICA)$/.test(i.estado);
+  // Checklists con plazo fijo (inicio del turno + minutos): qué mostrarle a quien responde.
+  function textoPlazo(e, plan, ahora) {
+    if (!e.plazo) return 'cierra a las ' + hhmm(e.hora_cierre);
+    if (Core.completa(plan)) return 'completo';
+    const min = Math.ceil((new Date(e.plazo) - new Date(ahora)) / 60000);
+    return min > 0 ? 'debe estar completo a las ' + hhmm(e.plazo) + (min <= 60 ? ' (quedan ' + min + ' min)' : '') : '<b class="vencido">plazo vencido a las ' + hhmm(e.plazo) + '</b>';
+  }
   const visibles = () => ejecuciones().filter(e => S.usuario.ve_toda_la_sede || !e.rol_id || e.rol_id === '*' || e.rol_id === S.usuario.rol_id);
 
   /* ---------------- Versión de la app ---------------- */
@@ -200,7 +207,12 @@
     doc.text(S.estado.empresa + ' · ' + ej.fecha.split('-').reverse().join('-') + ' · cerrado ' + l.hhmm + ' por ' + S.usuario.nombre, M, 19);
     y = 33; doc.setTextColor(20); doc.setFontSize(11); doc.setFont('helvetica', 'bold');
     doc.text('Cumplimiento: ' + r.hechas + '/' + r.total + ' (' + r.pct_cumplimiento + '%)   A tiempo: ' + r.a_tiempo + '   Con atraso: ' + r.atrasadas + '   Pendientes: ' + r.pendientes + (r.pct_calidad !== '' ? '   En buen estado: ' + r.pct_calidad + '%' : ''), M, y);
-    y += 7; let seccion = null;
+    y += 7;
+    const fl = Core.faltas(lista); // todas las faltas van arriba, igual que en el informe del servidor
+    doc.setFontSize(10); doc.setFont('helvetica', 'bold'); doc.setTextColor(fl.length ? 190 : 20, fl.length ? 30 : 120, fl.length ? 30 : 70); doc.text(fl.length ? 'Faltas (' + fl.length + ')' : 'Sin faltas', M, y); y += 5;
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(60);
+    fl.forEach(f => { const t = doc.splitTextToSize('• ' + f.detalle + ' — ' + (f.critica ? '(crítica) ' : '') + f.texto, W - 2 * M - 2); salto(t.length * 3.8 + 1); doc.text(t, M + 1.5, y); y += t.length * 3.8 + 0.6; });
+    y += 4; let seccion = null;
     const nombreValor = i => !hecha(i) ? 'PENDIENTE' : i.estado === 'NO_APLICA' ? 'No aplica' : ({ B: 'Bueno', R: 'Regular', M: 'MALO', SI: 'Sí', NO: 'NO', FOTO: 'Foto' }[i.valor] || (i.valor + (i.tipo_respuesta === 'NUMERO' && i.unidad ? ' ' + i.unidad : '')));
     lista.forEach(i => {
       if (i.seccion !== seccion) { seccion = i.seccion; salto(12); doc.setFillColor(230, 238, 243); doc.rect(M, y - 4, W - 2 * M, 6.5, 'F'); doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(11, 61, 92); doc.text(String(seccion || 'Tareas'), M + 1.5, y + 0.5); y += 7; }
@@ -294,9 +306,9 @@
     ej.forEach(e => {
       const l = instancias(e).filter(i => i.origen === 'PLAN'), r = Core.resumen(l), cerrada = e.estado === 'CERRADA' || S.local.cerradas[e.ejecucion_id], futura = e.envio_programado > ahora;
       h += '<button class="tarjeta lista ' + (cerrada ? 'cerrada' : '') + '" data-a="abrir" data-id="' + esc(e.ejecucion_id) + '"><div class="fila"><b>' + esc(e.plantilla) + '</b><span class="chip ' + (cerrada ? 'gris' : futura ? 'azul' : 'verde') + '">' + (cerrada ? 'Cerrado' : futura ? 'Desde ' + hhmm(e.envio_programado) : 'Abierto') + '</span></div>' +
-        '<div class="progreso"><i style="width:' + (r.total ? Math.round(100 * (r.hechas) / r.total) : 0) + '%"></i></div><small>' + r.hechas + ' de ' + r.total + ' tareas · cierra a las ' + hhmm(e.hora_cierre) + '</small></button>';
+        '<div class="progreso"><i style="width:' + (r.total ? Math.round(100 * (r.hechas) / r.total) : 0) + '%"></i></div><small>' + r.hechas + ' de ' + r.total + ' tareas · ' + textoPlazo(e, l, ahora) + '</small></button>';
     });
-    return h + '<p class="pie"><a data-a="recargar">Actualizar ahora</a><br><small>App ' + esc(VER) + ' · configuración ' + esc(S.estado.rev || '—') + (S.estado._bajado ? ' · al día a las ' + hhmm(new Date(S.estado._bajado).toISOString()) : '') + '</small></p>';
+    return h + '<p class="pie"><a data-a="recargar">Actualizar ahora</a><br><small>App ' + esc(VER) + ' · configuración ' + esc(S.estado.rev || '—') + (S.estado._bajado ? ' · al día a las ' + hhmm(new Date(S.estado._bajado).toISOString()) : '') + '</small><br><a href="portal.html">Inicio</a></p>';
   }
   function vTarea(i, ahora) {
     const b = S.borr[i.instancia_id] || {}, ok = hecha(i), futura = !ok && i.disponible_desde > ahora, atras = !ok && i.vence_a < ahora;
@@ -329,11 +341,12 @@
   function vChecklist() {
     const ej = ejecuciones().find(e => e.ejecucion_id === S.ejec); if (!ej) { S.vista = 'inicio'; return vInicio(); }
     const lista = instancias(ej), plan = lista.filter(i => i.origen === 'PLAN'), r = Core.resumen(plan), ahora = new Date().toISOString(), cerrada = ej.estado === 'CERRADA' || S.local.cerradas[ej.ejecucion_id];
-    let h = '<header class="top fijo"><a class="volver" data-a="volver">‹ Volver</a><h1>' + esc(ej.plantilla) + '</h1><div class="progreso"><i style="width:' + (r.total ? Math.round(100 * r.hechas / r.total) : 0) + '%"></i></div><p>' + r.hechas + ' de ' + r.total + ' · cierra a las ' + hhmm(ej.hora_cierre) + ' · ' + esc(S.usuario.nombre) + '</p></header>';
+    let h = '<header class="top fijo"><a class="volver" data-a="volver">‹ Volver</a><h1>' + esc(ej.plantilla) + '</h1><div class="progreso"><i style="width:' + (r.total ? Math.round(100 * r.hechas / r.total) : 0) + '%"></i></div><p>' + r.hechas + ' de ' + r.total + ' · ' + textoPlazo(ej, plan, ahora) + ' · ' + esc(S.usuario.nombre) + '</p></header>';
     let sec = null;
     lista.forEach(i => { if (i.seccion !== sec) { sec = i.seccion; h += '<h2 class="seccion">' + esc(sec || 'Tareas') + '</h2>'; } h += vTarea(i, ahora); });
     const pend = lista.filter(i => !hecha(i) && i.disponible_desde <= ahora).length;
-    h += '<div class="cierre">' + (cerrada ? '<p>Este checklist ya fue cerrado' + (pend ? '. Aún puedes completar las ' + pend + ' tareas pendientes.' : '.') + '</p>' :
+    const solo = ej.plazo && Core.completa(plan) && !cerrada; // con plazo fijo, al completarlo el servidor lo cierra y envía el informe
+    h += '<div class="cierre">' + (solo ? '<p><b>Checklist completo.</b> El informe se envía solo' + (S.enLinea && !S.pend ? '.' : ' apenas lleguen tus respuestas al servidor.') + '</p>' : cerrada ? '<p>Este checklist ya fue cerrado' + (pend ? '. Aún puedes completar las ' + pend + ' tareas pendientes.' : '.') + '</p>' :
       (S.confirmaCierre ? '<p><b>' + (pend ? 'Quedan ' + pend + ' tareas sin responder.' : 'Todo respondido.') + '</b> Al cerrar se envía el reporte y el PDF al grupo.</p><button class="btn" data-a="cerrar-ok">Sí, cerrar y enviar reporte</button><button class="btn sec" data-a="cerrar-no">Seguir respondiendo</button>'
         : '<button class="btn" data-a="cerrar">Cerrar checklist</button>')) + '</div>';
     return h;

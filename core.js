@@ -61,7 +61,16 @@ var Core = (function () {
     var envio = aInstante(fecha, he, tz);
     var cruza = hc <= he;
     var cierre = aInstante(cruza ? sumarDias(fecha, 1) : fecha, hc, tz);
-    return { envio: envio, cierre: cierre, limite: mas(cierre, num(plantilla.tolerancia_cierre_min, 15)), cruza: cruza, hora_envio: he, hora_cierre: hc };
+    var limite = mas(cierre, num(plantilla.tolerancia_cierre_min, 15));
+    // Plazo fijo (opcional): inicio del turno + N minutos. A esa hora el checklist debe estar completo; solo depende del reloj.
+    var pm = num(plantilla.plazo_min, 0), plazo = null;
+    if (pm > 0) {
+      var hi = normHora(plantilla.hora_inicio_turno) || he;
+      plazo = mas(aInstante(fecha, hi, tz), pm);
+      if (plazo > limite) plazo = limite;
+      if (plazo <= envio) plazo = null; // configuración inválida: se ignora
+    }
+    return { envio: envio, cierre: cierre, limite: limite, plazo: plazo, cruza: cruza, hora_envio: he, hora_cierre: hc };
   }
   function instanteEnTurno(hhmm, v, fecha, tz) { // una hora "suelta" dentro del turno
     return aInstante(v.cruza && hhmm < v.hora_envio ? sumarDias(fecha, 1) : fecha, hhmm, tz);
@@ -106,9 +115,10 @@ var Core = (function () {
     (tareas || []).filter(function (t) { return String(t.plantilla_id) === String(plantilla.plantilla_id) && (t.activa === '' || t.activa == null || si(t.activa)); })
       .forEach(function (t) {
         var tol = num(t.tolerancia_min, 15), sec = secs[t.seccion_id] || {}, u = umbralDe(t, umbrales);
-        var cada = String(t.frecuencia || '').toUpperCase() === 'CADA_N_HORAS';
+        var cada = String(t.frecuencia || '').toUpperCase() === 'CADA_N_HORAS', sinHora = !cada && !normHora(t.hora_objetivo);
         horasDeTarea(t, plantilla, fecha, tz).forEach(function (h) {
-          var prog = instanteEnTurno(h, v, fecha, tz);
+          var prog = instanteEnTurno(h, v, fecha, tz), vence = mas(prog, tol);
+          if (v.plazo && sinHora && vence > v.plazo) vence = v.plazo; // con plazo fijo, las tareas sin hora propia vencen al plazo
           out.push({
             instancia_id: idInstancia(fecha, plantilla.plantilla_id, t.tarea_id, h),
             ejecucion_id: idEjecucion(fecha, plantilla.plantilla_id), tarea_id: String(t.tarea_id),
@@ -120,7 +130,7 @@ var Core = (function () {
             activo_id: String(t.activo_id || ''), activo: (acts[t.activo_id] || {}).nombre || '',
             minimo: u ? u.minimo : '', maximo: u ? u.maximo : '',
             disponible_desde: iso(cada ? mas(prog, -Math.max(tol, 15)) : v.envio),
-            programada_para: iso(prog), vence_a: iso(mas(prog, tol)),
+            programada_para: iso(prog), vence_a: iso(vence),
             estado: 'PENDIENTE', minutos_atraso: '', origen: 'PLAN', respuesta_id: '',
           });
         });
@@ -216,6 +226,30 @@ var Core = (function () {
     r.pct_calidad = r.evaluadas ? Math.round(1000 * r.buenas / r.evaluadas) / 10 : '';
     return r;
   }
+  /** ¿Están todas las tareas planificadas respondidas (o marcadas No aplica)? Las relecturas no cuentan. */
+  function completa(instancias) {
+    var plan = (instancias || []).filter(function (i) { return i.origen === 'PLAN' || !i.origen; });
+    return plan.length > 0 && plan.every(function (i) { return /^(HECHA|HECHA_ATRASO|NO_APLICA)$/.test(i.estado); });
+  }
+  /**
+   * FALTAS de un checklist: todo lo que no salió bien, para el informe. Cada instancia puede traer .valor de su respuesta.
+   * tipos: NO_HECHA · ATRASO · FUERA_RANGO · ESTADO (Regular, Malo o No)
+   */
+  function faltas(instancias) {
+    var out = [];
+    (instancias || []).forEach(function (i) {
+      if (i.estado === 'NO_APLICA') return;
+      var crit = i.critica === 'SI', add = function (tipo, detalle) { out.push({ instancia_id: i.instancia_id, tipo: tipo, texto: i.texto, detalle: detalle, critica: crit, usuario: i.usuario || '' }); };
+      if (i.estado === 'PENDIENTE' || i.estado === 'NO_HECHA') { if (i.origen !== 'RELECTURA' || i.estado === 'NO_HECHA') add('NO_HECHA', 'No realizada'); return; }
+      if (i.estado === 'HECHA_ATRASO') add('ATRASO', 'Con atraso' + (i.minutos_atraso !== '' && i.minutos_atraso != null ? ' de ' + i.minutos_atraso + ' min' : ''));
+      if (i.valor === undefined || i.valor === '') return;
+      var v = String(i.valor).toUpperCase();
+      if (tieneRango(i)) { if (validarValor(i, i.valor).fuera_rango) add('FUERA_RANGO', 'Fuera de rango: ' + i.valor + (i.unidad ? ' ' + i.unidad : '') + ' (rango ' + textoRango(i) + ')'); }
+      else if (i.tipo_respuesta === 'BRM' && (v === 'R' || v === 'M')) add('ESTADO', v === 'M' ? 'Malo' : 'Regular');
+      else if (i.tipo_respuesta === 'SI_NO' && v === 'NO') add('ESTADO', 'No');
+    });
+    return out;
+  }
   /** Agrupa instancias por una clave y resume cada grupo (dashboard: por sede, tarea, persona, turno...). */
   function agrupar(instancias, claveFn) {
     var g = {}, orden = [];
@@ -236,7 +270,7 @@ var Core = (function () {
     normHora: normHora, mas: mas, iso: iso, si: si, num: num, aplicaHoy: aplicaHoy, ventana: ventana,
     idEjecucion: idEjecucion, idInstancia: idInstancia, horasDeTarea: horasDeTarea, generarInstancias: generarInstancias,
     instanciaRelectura: instanciaRelectura, evaluarEstado: evaluarEstado, tieneRango: tieneRango, validarValor: validarValor,
-    textoRango: textoRango, esRespuestaCritica: esRespuestaCritica, esBuena: esBuena, resumen: resumen, agrupar: agrupar, vencidas: vencidas,
+    textoRango: textoRango, esRespuestaCritica: esRespuestaCritica, esBuena: esBuena, resumen: resumen, agrupar: agrupar, vencidas: vencidas, completa: completa, faltas: faltas,
   };
 })();
 if (typeof module !== 'undefined') module.exports = Core;
