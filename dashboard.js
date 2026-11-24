@@ -86,7 +86,7 @@
     l.forEach(i => {
       if (i.seccion !== sec) { sec = i.seccion; filas.push('<tr><th colspan="7">' + esc(sec || 'Tareas') + '</th></tr>'); }
       filas.push('<tr><td>' + (i.critica === 'SI' ? '<span class="chip c-mal">Crítica</span> ' : '') + esc(i.texto) + (i.comentario ? '<br><span class="ayuda">💬 ' + esc(i.comentario) + '</span>' : '') + '</td><td>' + chipEstado(i.estado) + '</td><td><b style="color:' + (i.fuera_rango === 'SI' || /^(M|NO)$/.test(i.valor) ? 'var(--rojo)' : 'inherit') + '">' + valor(i) + '</b>' + (i.fuera_rango === 'SI' ? ' <span class="chip c-mal">fuera de rango</span>' : '') +
-        '</td><td>' + esc(i.usuario) + '</td><td>' + hora(i.capturado_en) + (i.minutos_atraso > 0 ? ' <span class="ayuda">(+' + i.minutos_atraso + ' min)</span>' : '') + '</td><td>' + (Number(i.retraso_sync_min) > 5 ? '<span class="chip c-med" title="Hora en que llegó al servidor">llegó ' + hora(i.recibido_en) + '</span>' : '') + '</td><td>' + (i.foto ? '<button class="mini sec" data-foto="' + esc(i.foto) + '">Ver foto</button>' : '') + '</td></tr>');
+        '</td><td>' + esc(i.usuario) + '</td><td>' + hora(i.capturado_en) + (i.minutos_atraso > 0 ? ' <span class="ayuda">(+' + i.minutos_atraso + ' min)</span>' : '') + '</td><td>' + (Number(i.retraso_sync_min) > 5 ? '<span class="chip c-med" title="Hora en que llegó al servidor">llegó ' + hora(i.recibido_en) + '</span>' : '') + '</td><td>' + ((i.fotos || []).length > 1 ? '<button class="mini sec" data-fotos="' + esc(i.instancia_id) + '">Ver ' + i.fotos.length + ' fotos</button>' : i.foto ? '<button class="mini sec" data-foto="' + esc(i.foto) + '">Ver foto</button><br><span class="ayuda">' + hora(((i.fotos || [])[0] || {}).t, true) + '</span>' : '') + '</td></tr>');
     });
     document.querySelector('#modal').innerHTML = '<div class="modal" data-cerrar="1"><div><div style="display:flex;justify-content:space-between;gap:12px;align-items:center"><h2 style="margin:0">' + esc(e.plantilla) + ' · ' + fechaCorta(e.fecha) + ' · ' + pct(e.pct_cumplimiento) + '</h2><button class="sec" data-cerrar="1">Cerrar</button></div>' +
       tabla(['Tarea', 'Estado', 'Respuesta', 'Quién respondió', 'Hora (celular)', 'Sincronización', 'Foto'], filas) + '</div></div>';
@@ -100,8 +100,21 @@
     const div = document.createElement('div'); div.className = 'modal'; div.dataset.foto = '1'; div.innerHTML = '<div><img src="' + url + '" alt="Foto de evidencia"><p class="ayuda">' + esc(r.nombre) + ' · toca fuera para cerrar</p></div>';
     div.onclick = () => div.remove(); document.body.appendChild(div);
   }
+  // Todas las fotos de una tarea, una debajo de otra, cada una con su fecha y hora de captura (se piden al backend de a una).
+  async function verFotos(instId) {
+    const i = D.datos.instancias.find(x => x.instancia_id === instId), fs = (i && i.fotos) || [];
+    const div = document.createElement('div'); div.className = 'modal'; div.dataset.foto = '1';
+    div.innerHTML = '<div style="max-height:92vh;overflow:auto"><h2 style="margin:0 0 8px">' + esc(i.texto) + ' · ' + fs.length + ' fotos</h2><div id="galeria">' + fs.map((f, k) => '<figure style="margin:0 0 14px"><div class="ayuda" data-k="' + k + '">Cargando foto ' + (k + 1) + '…</div><figcaption class="ayuda">Foto ' + (k + 1) + ' de ' + fs.length + ' · tomada el ' + hora(f.t, true) + '</figcaption></figure>').join('') + '</div><p class="ayuda">Toca fuera para cerrar</p></div>';
+    div.onclick = ev => { if (ev.target === div) div.remove(); }; document.body.appendChild(div);
+    for (let k = 0; k < fs.length; k++) {
+      if (!div.isConnected) return;
+      const r = await api({ action: 'foto', evidencia_id: fs[k].id }), c = div.querySelector('[data-k="' + k + '"]'); if (!c) return;
+      c.outerHTML = r.ok ? '<img src="data:' + r.mime + ';base64,' + r.data + '" alt="Foto ' + (k + 1) + '" style="max-width:100%;border-radius:8px">' : '<div class="aviso mal">No se pudo cargar: ' + esc(r.error) + '</div>';
+    }
+  }
   main.addEventListener('click', e => {
     const t = e.target, q = s => t.closest(s);
+    if (t.dataset.fotos) return verFotos(t.dataset.fotos);
     if (t.id === 'ver') { D.desde = document.querySelector('#desde').value; D.hasta = document.querySelector('#hasta').value; return cargar(); }
     if (t.dataset.r) return rango(Number(t.dataset.r));
     if (t.dataset.tab) { D.tab = t.dataset.tab; return pintar(); }

@@ -64,3 +64,9 @@ button:active{filter:brightness(.9)}
 @media (min-width:520px){.personas{grid-template-columns:1fr 1fr}}
 
 .vencido{color:#be1e1e}
+.alerta.fotos{background:var(--azul2)}.alerta.fotos p{margin:.2rem 0}
+.minis{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}
+.minis .mini{position:relative;width:76px;text-align:center}.minis img{width:76px;height:76px;object-fit:cover;border-radius:10px;border:1px solid var(--borde);display:block}
+.minis button{position:absolute;right:-6px;top:-6px;width:28px;height:28px;border-radius:50%;border:0;background:var(--rojo);color:#fff;font-size:.9rem;font-weight:800;line-height:1;padding:0}
+.minis small{font-size:.72rem}.cuenta{font-size:.95rem}
+.botones button:disabled{opacity:.45}

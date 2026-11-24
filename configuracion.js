@@ -29,7 +29,7 @@
       { t: 'Unidad', cls: 'corto', get: a => umbral(a).unidad ?? '°C', set: (a, v) => umbral(a, true).unidad = v }, { k: 'activo', t: 'Activa', op: SINO }],
     tareas: [{ t: 'Sección', get: seccionDe, set: ponerSeccion, lista: 'secciones', cls: 'medio' }, { k: 'texto', t: 'Tarea', cls: 'ancho' },
       { k: 'tipo_respuesta', t: 'Respuesta', op: [['SI_NO', 'Sí / No'], ['BRM', 'Bueno / Regular / Malo'], ['NUMERO', 'Número'], ['TEXTO', 'Texto'], ['FOTO', 'Solo foto']] }, { k: 'unidad', t: 'Unidad', cls: 'corto' },
-      { k: 'foto', t: 'Foto', op: [['NO', 'No'], ['OPCIONAL', 'Opcional'], ['OBLIGATORIA', 'Obligatoria']] }, { k: 'critica', t: 'Crítica', op: SINO }, { k: 'critico_estados', t: 'Alerta si queda en', op: [['', '(según tipo)'], ['M', 'Malo'], ['R,M', 'Regular o Malo'], ['NO', 'No']] },
+      { k: 'foto', t: 'Foto', op: [['NO', 'No'], ['OPCIONAL', 'Opcional'], ['OBLIGATORIA', 'Obligatoria']] }, { k: 'fotos_max', t: 'Fotos máx.', cls: 'corto', ph: () => '1' }, { k: 'critica', t: 'Crítica', op: SINO }, { k: 'critico_estados', t: 'Alerta si queda en', op: [['', '(según tipo)'], ['M', 'Malo'], ['R,M', 'Regular o Malo'], ['NO', 'No'], ['SI', 'Sí (debe estar en No)']] },
       { k: 'frecuencia', t: 'Frecuencia', op: [['DIARIA', 'Diaria'], ['CADA_N_HORAS', 'Cada N horas'], ['SEMANAL', 'Semanal'], ['MENSUAL', 'Mensual']] }, { k: 'hora_objetivo', t: 'Hora objetivo', tipo: 'time' }, { k: 'tolerancia_min', t: 'Tolerancia (min)', cls: 'corto' },
       { k: 'cada_n_horas', t: 'Cada N h', cls: 'corto' }, { k: 'ventana_inicio', t: 'Desde', tipo: 'time' }, { k: 'ventana_fin', t: 'Hasta', tipo: 'time' }, { k: 'dias_semana', t: 'Días (LMXJVSD)', cls: 'corto' }, { k: 'dia_mes', t: 'Día del mes', cls: 'corto' },
       { k: 'activo_id', t: 'Cámara / equipo', op: t => ops(C.t.Activos.filter(a => a.sede_id === (plantilla() || {}).sede_id), 'activo_id', 'nombre', '—') }, { k: 'activa', t: 'Activa', op: SINO }],
@@ -106,7 +106,7 @@
       campo('hora_envio', 'Hora en que se envía el link', 'time') + campo('hora_cierre', 'Hora de cierre', 'time') + campo('tolerancia_cierre_min', 'Margen después del cierre (min)') + campo('dias', 'Días (LMXJVSD)') + campo('activa', 'Activo', '', SINO) +
       campo('hora_inicio_turno', 'Plazo fijo: inicio del turno', 'time') + campo('plazo_min', 'Plazo fijo: minutos para completarlo') + '</div>' +
       '<p class="ayuda">' + textoPlazo(p) + '</p>' +
-      '<p class="ayuda">Versión ' + esc(p.version || 1) + ' · ' + FILAS.tareas().length + ' tareas. Al guardar un cambio sube la versión; lo ya respondido no se altera. <b>Hora objetivo</b> vacía = la tarea vence al cierre del checklist. <b>Cada N horas</b>: indica N y el rango Desde–Hasta. <b>Semanal</b>: días (ej. L o LXV). <b>Mensual</b>: día del mes.</p>' +
+      '<p class="ayuda">Versión ' + esc(p.version || 1) + ' · ' + FILAS.tareas().length + ' tareas. Al guardar un cambio sube la versión; lo ya respondido no se altera. <b>Fotos máx.</b>: cuántas fotos admite la tarea (1 a 10; vacío = 1); se toman después de responder y, si la foto es obligatoria, basta con una. <b>Hora objetivo</b> vacía = la tarea vence al cierre del checklist. <b>Cada N horas</b>: indica N y el rango Desde–Hasta. <b>Semanal</b>: días (ej. L o LXV). <b>Mensual</b>: día del mes.</p>' +
       '<datalist id="secciones">' + C.t.Secciones.filter(s => s.plantilla_id === C.pl).map(s => '<option value="' + esc(s.nombre) + '">').join('') + '</datalist>' + grilla('tareas', { agregar: 'Agregar tarea', borrar: true, mover: true });
     return h;
   }
@@ -140,6 +140,7 @@
     for (const s of C.t.Sedes) { const m = malos(s.emails_reporte).concat(malos(s.emails_escalamiento)); if (m.length) return 'Correo mal escrito en la sede ' + s.nombre + ': ' + m[0]; }
     for (const r of C.t.Reglas) { const m = malos(r.destinatarios); if (m.length) return 'Correo mal escrito en la regla ' + r.tipo + ': ' + m[0]; }
     for (const r of C.t.Reglas) if (/CORREO|AMBOS/.test(r.canal || '') && !String(r.destinatarios || '').trim() && !C.t.Sedes.some(s => String(s.emails_reporte || '').trim())) return 'La regla ' + r.tipo + ' va por correo, pero no tiene destinatarios ni hay correos en ninguna sede.';
+    for (const t of C.t.Tareas) { const v = String(t.fotos_max == null ? '' : t.fotos_max).trim(); if (v !== '' && !/^([1-9]|10)$/.test(v)) return 'En "' + t.texto + '", Fotos máx. debe ser un número de 1 a 10 (o vacío).'; }
     for (const p of C.t.Plantillas) { const x = plazoDe(p); if (x && (x.plazo <= x.envio || x.plazo > x.limite)) return 'El plazo fijo de "' + p.nombre + '" queda fuera del horario del checklist (vence a las ' + aHora(x.plazo) + ').'; }
     const malPin = C.t.Usuarios.find(u => u.pin_nuevo && !/^\d{4}$/.test(u.pin_nuevo)); if (malPin) return 'El PIN de ' + malPin.nombre + ' debe tener exactamente 4 dígitos.';
     const sinSede = C.t.Usuarios.find(u => !usSede(u).sede_id); if (sinSede) return 'Falta la sede de ' + (sinSede.nombre || 'una persona') + '.';
@@ -161,7 +162,7 @@
     sedes: () => ({ sede_id: nuevoId('S'), nombre: '', tipo: 'local', centro_costo: '', telegram_chat_id: '', telegram_chat_escalamiento: '', zona_horaria: 'America/Santiago', clave_equipos: 'sede-' + Math.random().toString(36).slice(2, 8), activa: 'SI', emails_reporte: '', emails_escalamiento: '' }),
     personas: () => ({ usuario_id: nuevoId('U'), nombre: '', email: '', telefono: '', telegram_user_id: '', pin_nuevo: '', activo: 'SI', tiene_pin: 'NO' }),
     camaras: () => ({ activo_id: nuevoId('ACT'), sede_id: (C.t.Sedes[0] || {}).sede_id || '', nombre: '', tipo: 'camara_refrigerada', codigo_qr: '', activo: 'SI' }),
-    tareas: () => { const ult = FILAS.tareas().slice(-1)[0] || {}; return { tarea_id: nuevoId('T'), plantilla_id: C.pl, seccion_id: ult.seccion_id || '', orden: 999, texto: '', tipo_respuesta: 'SI_NO', unidad: '', foto: 'NO', critica: 'NO', critico_estados: '', frecuencia: 'DIARIA', cada_n_horas: '', ventana_inicio: '', ventana_fin: '', dias_semana: '', dia_mes: '', hora_objetivo: '', tolerancia_min: 15, activo_id: '', activa: 'SI' }; },
+    tareas: () => { const ult = FILAS.tareas().slice(-1)[0] || {}; return { tarea_id: nuevoId('T'), plantilla_id: C.pl, seccion_id: ult.seccion_id || '', orden: 999, texto: '', tipo_respuesta: 'SI_NO', unidad: '', foto: 'NO', critica: 'NO', critico_estados: '', frecuencia: 'DIARIA', cada_n_horas: '', ventana_inicio: '', ventana_fin: '', dias_semana: '', dia_mes: '', hora_objetivo: '', tolerancia_min: 15, activo_id: '', activa: 'SI', fotos_max: '' }; },
     reglas: () => ({ regla_id: nuevoId('R'), tipo: document.querySelector('#tipoRegla').value, sede_id: (C.t.Sedes[0] || {}).sede_id || '*', parametro: '', parametro2: '', activa: 'SI', descripcion: '', canal: '', destinatarios: '' }),
   };
   const TABLA = { sedes: 'Sedes', personas: 'Usuarios', camaras: 'Activos', tareas: 'Tareas', reglas: 'Reglas' };

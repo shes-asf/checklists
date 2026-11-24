@@ -127,7 +127,7 @@ var Core = (function () {
             texto: t.texto + (cada ? ' · ' + h : ''), tipo_respuesta: String(t.tipo_respuesta || 'SI_NO').toUpperCase(),
             unidad: t.unidad || (u ? u.unidad : '') || '', foto: String(t.foto || 'NO').toUpperCase(),
             critica: si(t.critica) ? 'SI' : 'NO', critico_estados: String(t.critico_estados || ''),
-            activo_id: String(t.activo_id || ''), activo: (acts[t.activo_id] || {}).nombre || '',
+            activo_id: String(t.activo_id || ''), activo: (acts[t.activo_id] || {}).nombre || '', fotos_max: fotosMax(t) > 1 ? String(fotosMax(t)) : '',
             minimo: u ? u.minimo : '', maximo: u ? u.maximo : '',
             disponible_desde: iso(cada ? mas(prog, -Math.max(tol, 15)) : v.envio),
             programada_para: iso(prog), vence_a: iso(vence),
@@ -200,9 +200,48 @@ var Core = (function () {
   function esBuena(inst, valor) { // null = no evaluable
     var v = String(valor).toUpperCase();
     if (inst.tipo_respuesta === 'BRM') return v === 'B';
-    if (inst.tipo_respuesta === 'SI_NO') return v === 'SI';
+    if (inst.tipo_respuesta === 'SI_NO') return v !== malSiNo(inst);
     if (tieneRango(inst)) return !validarValor(inst, valor).fuera_rango;
     return null;
+  }
+
+  // ---- Fotos y orden de la respuesta --------------------------------------
+  /** Cuántas fotos admite una tarea: 0 si no lleva foto; si lleva, de 1 a 10 (fotos_max vacío = 1, como siempre). */
+  function fotosMax(inst) {
+    var conFoto = inst.tipo_respuesta === 'FOTO' || /^(OPCIONAL|OBLIGATORIA)$/.test(String(inst.foto || '').toUpperCase());
+    if (!conFoto) return 0;
+    var n = Math.floor(num(inst.fotos_max, 1));
+    return Math.max(1, Math.min(10, n));
+  }
+  function fotoObligatoria(inst) { return inst.tipo_respuesta === 'FOTO' || String(inst.foto || '').toUpperCase() === 'OBLIGATORIA'; }
+  /** Valor "malo" de una tarea Sí/No: normalmente NO. Si su alerta se configuró para SI (algo que debe estar apagado), el malo es SI. */
+  function malSiNo(inst) { return String(inst.critico_estados || '').toUpperCase().replace(/\s/g, '') === 'SI' ? 'SI' : 'NO'; }
+  /**
+   * ORDEN DE UNA RESPUESTA: primero el valor; después la confirmación (número fuera de rango), el comentario y, al final, las fotos.
+   * b = borrador { valor, confirmado, comentario (undefined = aún no se pidió), fotos (cantidad tomada), fotosListas (ya tocó Enviar) }.
+   * Devuelve { paso: 'error' | 'confirmar' | 'comentario' | 'fotos' | 'enviar', mensaje, valor, fuera }.
+   * Con foto OBLIGATORIA nunca llega a 'enviar' sin al menos una foto.
+   */
+  function pasoRespuesta(inst, b) {
+    var tipo = inst.tipo_respuesta, valor = b.valor, fuera = false;
+    if (tipo === 'NUMERO') {
+      var v = validarValor(inst, valor);
+      if (!v.ok) return { paso: 'error', mensaje: v.mensaje };
+      valor = String(v.numero); fuera = v.fuera_rango;
+      if (fuera && !b.confirmado) return { paso: 'confirmar', mensaje: v.mensaje, valor: valor, fuera: true };
+    }
+    if (tipo === 'TEXTO' && !String(valor == null ? '' : valor).trim()) return { paso: 'error', mensaje: 'Escribe algo' };
+    if (tipo === 'FOTO') valor = 'FOTO';
+    var u = String(valor).toUpperCase();
+    var pide = (tipo === 'BRM' && (u === 'R' || u === 'M')) || (tipo === 'SI_NO' && u === malSiNo(inst)) || fuera;
+    if (pide && b.comentario === undefined) return { paso: 'comentario', valor: valor, fuera: fuera };
+    var max = fotosMax(inst), n = num(b.fotos, 0);
+    if (max > 0) {
+      if (n > max) return { paso: 'fotos', mensaje: 'Esta tarea admite ' + max + (max === 1 ? ' foto' : ' fotos') + ' como máximo', valor: valor, fuera: fuera };
+      if (fotoObligatoria(inst) && n < 1) return { paso: 'fotos', mensaje: b.fotosListas ? 'Esta tarea necesita al menos una foto' : '', valor: valor, fuera: fuera, falta: true };
+      if (!b.fotosListas) return { paso: 'fotos', valor: valor, fuera: fuera };
+    }
+    return { paso: 'enviar', valor: valor, fuera: fuera };
   }
 
   // ---- Cumplimiento -------------------------------------------------------
@@ -246,7 +285,7 @@ var Core = (function () {
       var v = String(i.valor).toUpperCase();
       if (tieneRango(i)) { if (validarValor(i, i.valor).fuera_rango) add('FUERA_RANGO', 'Fuera de rango: ' + i.valor + (i.unidad ? ' ' + i.unidad : '') + ' (rango ' + textoRango(i) + ')'); }
       else if (i.tipo_respuesta === 'BRM' && (v === 'R' || v === 'M')) add('ESTADO', v === 'M' ? 'Malo' : 'Regular');
-      else if (i.tipo_respuesta === 'SI_NO' && v === 'NO') add('ESTADO', 'No');
+      else if (i.tipo_respuesta === 'SI_NO' && v === malSiNo(i)) add('ESTADO', v === 'NO' ? 'No' : 'Sí (debía ser No)');
     });
     return out;
   }
@@ -271,6 +310,7 @@ var Core = (function () {
     idEjecucion: idEjecucion, idInstancia: idInstancia, horasDeTarea: horasDeTarea, generarInstancias: generarInstancias,
     instanciaRelectura: instanciaRelectura, evaluarEstado: evaluarEstado, tieneRango: tieneRango, validarValor: validarValor,
     textoRango: textoRango, esRespuestaCritica: esRespuestaCritica, esBuena: esBuena, resumen: resumen, agrupar: agrupar, vencidas: vencidas, completa: completa, faltas: faltas,
+    fotosMax: fotosMax, fotoObligatoria: fotoObligatoria, malSiNo: malSiNo, pasoRespuesta: pasoRespuesta,
   };
 })();
 if (typeof module !== 'undefined') module.exports = Core;

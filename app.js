@@ -105,27 +105,36 @@
   }
 
   /* ---------------- Responder ---------------- */
-  const borr = i => S.borr[i.instancia_id] || (S.borr[i.instancia_id] = { fotos: [] });
-  const pideComentario = (i, v, fuera) => (i.tipo_respuesta === 'BRM' && (v === 'R' || v === 'M')) || (i.tipo_respuesta === 'SI_NO' && v === 'NO') || fuera;
+  // El orden lo define Core.pasoRespuesta (lo mismo que prueban las pruebas): 1) la respuesta, 2) confirmar si está fuera de rango,
+  // 3) comentario, 4) las fotos. La hora que vale para el atraso y el plazo es la de la RESPUESTA, no la de la última foto.
+  const borr = i => S.borr[i.instancia_id] || (S.borr[i.instancia_id] = { fotos: [] }); // fotos: [{ id, mini, t }]
+  const pideComentario = (i, v, fuera) => (i.tipo_respuesta === 'BRM' && (v === 'R' || v === 'M')) || (i.tipo_respuesta === 'SI_NO' && v === Core.malSiNo(i)) || fuera;
   async function responder(i, valor) {
-    const b = borr(i); b.valor = valor; b.error = '';
-    let fuera = false;
-    if (i.tipo_respuesta === 'NUMERO') {
-      const v = Core.validarValor(i, valor);
-      if (!v.ok) { b.error = v.mensaje; return pintar(); }
-      b.valor = String(v.numero); fuera = v.fuera_rango;
-      if (fuera && !b.confirmado) { b.paso = 'confirmar'; b.mensaje = v.mensaje; return pintar(); }
+    const b = borr(i); if (valor !== undefined) b.valor = valor; b.error = '';
+    const p = Core.pasoRespuesta(i, { valor: b.valor, confirmado: b.confirmado, comentario: b.comentario, fotos: b.fotos.length, fotosListas: b.fotosListas });
+    if (p.paso === 'error') { b.error = p.mensaje; return pintar(); }
+    if (!b.respondido_en) b.respondido_en = new Date().toISOString();
+    b.valor = p.valor;
+    if (p.paso === 'confirmar') { b.paso = 'confirmar'; b.mensaje = p.mensaje; return pintar(); }
+    if (p.paso === 'comentario') { b.paso = 'comentario'; return pintar(); }
+    if (p.paso === 'fotos') {
+      b.paso = 'fotos'; b.error = p.mensaje || ''; b.fotosListas = false; pintar();
+      if (p.falta && !b.camaraYa) { b.camaraYa = true; await agregarFoto(i); } // foto obligatoria: la cámara se abre sola la primera vez
+      return;
     }
-    if (i.tipo_respuesta === 'TEXTO' && !String(valor).trim()) { b.error = 'Escribe algo'; return pintar(); }
-    if ((i.foto === 'OBLIGATORIA' || i.tipo_respuesta === 'FOTO') && !b.fotos.length) {
-      const ok = await tomarFoto(i); if (!ok) { b.paso = ''; return pintar(); }
-    }
-    if (pideComentario(i, b.valor, fuera) && b.comentario === undefined) { b.paso = 'comentario'; return pintar(); }
-    await guardar(i, { valor: i.tipo_respuesta === 'FOTO' ? 'FOTO' : b.valor, comentario: b.comentario || '', evidencias: b.fotos.slice(), fuera });
+    await guardar(i, { valor: p.valor, comentario: b.comentario || '', evidencias: b.fotos.map(f => f.id), fotos_t: Object.fromEntries(b.fotos.map(f => [f.id, f.t])), fuera: p.fuera, capturado_en: b.respondido_en });
   }
+  async function agregarFoto(i) {
+    const b = borr(i), max = Core.fotosMax(i); if (b.fotos.length >= max) return;
+    const ok = await tomarFoto(i);
+    if (ok && max === 1) { b.fotosListas = true; return responder(i); } // tarea de una sola foto: se envía al tomarla, sin un toque extra
+    pintar();
+  }
+  async function quitarFoto(i, id) { const b = borr(i); b.fotos = b.fotos.filter(f => f.id !== id); b.error = ''; await Local.borrarFoto(id); pintar(); }
+  async function descartar(i) { const b = S.borr[i.instancia_id]; if (b) for (const f of (b.fotos || [])) await Local.borrarFoto(f.id); delete S.borr[i.instancia_id]; pintar(); }
   async function guardar(i, d) {
     const r = { respuesta_id: uid(), instancia_id: i.instancia_id, ejecucion_id: i.ejecucion_id, usuario_id: S.usuario.usuario_id, usuario: S.usuario.nombre, valor: d.valor || '', comentario: d.comentario || '',
-      no_aplica: !!d.no_aplica, evidencias: d.evidencias || [], capturado_en: new Date().toISOString(), offline: !navigator.onLine, encolada: false };
+      no_aplica: !!d.no_aplica, evidencias: d.evidencias || [], fotos_t: d.fotos_t || {}, capturado_en: d.capturado_en || new Date().toISOString(), offline: !navigator.onLine, encolada: false };
     S.local.r[i.instancia_id] = r; delete S.borr[i.instancia_id];
     if (d.fuera && S.estado.t1) { const rel = Core.instanciaRelectura(i, r.capturado_en, S.estado.t1.relectura, S.estado.t1.escala); if (rel) { rel.fecha = i.fecha; S.local.rel.push(rel); } }
     await guardarLocal(); pintar();
@@ -136,7 +145,7 @@
   }
   async function encolar(instId) {
     const r = S.local.r[instId]; if (!r || r.encolada) return;
-    for (const ev of r.evidencias) await Cola.agregar({ tipo: 'archivo', evidencia_id: ev, cuerpo: { evidencia_id: ev, instancia_id: r.instancia_id, ejecucion_id: r.ejecucion_id, tipo: 'foto', fecha: instId.slice(0, 10), capturado_en: r.capturado_en } });
+    for (const ev of r.evidencias) await Cola.agregar({ tipo: 'archivo', evidencia_id: ev, cuerpo: { evidencia_id: ev, instancia_id: r.instancia_id, ejecucion_id: r.ejecucion_id, tipo: 'foto', fecha: instId.slice(0, 10), capturado_en: (r.fotos_t || {})[ev] || r.capturado_en } }); // cada foto con su propia hora
     await Cola.agregar({ tipo: 'respuesta', cuerpo: { respuesta_id: r.respuesta_id, instancia_id: r.instancia_id, usuario_id: r.usuario_id, valor: r.valor, comentario: r.comentario, no_aplica: r.no_aplica, evidencias: r.evidencias, capturado_en: r.capturado_en, offline: r.offline } });
     r.encolada = true; await guardarLocal(); S.pend = (await Cola.todo()).length; barra(); enviar();
   }
@@ -159,9 +168,11 @@
   }
   async function registrarFoto(canvas, i) {
     sello(canvas, i);
-    const data = canvas.toDataURL('image/jpeg', 0.72).split(',')[1], id = 'ev' + uid();
-    await Local.guardarFoto(id, { id, data, instancia_id: i.instancia_id, ejecucion_id: i.ejecucion_id, texto: i.texto, fecha: hoy() });
-    borr(i).fotos.push(id); return true;
+    const data = canvas.toDataURL('image/jpeg', 0.72).split(',')[1], id = 'ev' + uid(), t = new Date().toISOString();
+    const k = Math.min(1, 160 / Math.max(canvas.width, canvas.height)), m = document.createElement('canvas'); // miniatura para revisar antes de enviar
+    m.width = Math.max(1, Math.round(canvas.width * k)); m.height = Math.max(1, Math.round(canvas.height * k)); m.getContext('2d').drawImage(canvas, 0, 0, m.width, m.height);
+    await Local.guardarFoto(id, { id, data, instancia_id: i.instancia_id, ejecucion_id: i.ejecucion_id, texto: i.texto, fecha: hoy(), capturado_en: t });
+    borr(i).fotos.push({ id, mini: m.toDataURL('image/jpeg', 0.6), t }); return true;
   }
   function tomarFoto(i) {
     return new Promise(async fin => {
@@ -311,30 +322,39 @@
     return h + '<p class="pie"><a data-a="recargar">Actualizar ahora</a><br><small>App ' + esc(VER) + ' · configuración ' + esc(S.estado.rev || '—') + (S.estado._bajado ? ' · al día a las ' + hhmm(new Date(S.estado._bajado).toISOString()) : '') + '</small><br><a href="portal.html">Inicio</a></p>';
   }
   function vTarea(i, ahora) {
-    const b = S.borr[i.instancia_id] || {}, ok = hecha(i), futura = !ok && i.disponible_desde > ahora, atras = !ok && i.vence_a < ahora;
+    const b = S.borr[i.instancia_id] || {}, ok = hecha(i), futura = !ok && i.disponible_desde > ahora, atras = !ok && i.vence_a < ahora, max = Core.fotosMax(i), oblig = Core.fotoObligatoria(i);
+    const nf = x => (x._fotos || []).length || Number(x.n_fotos) || 0, NOM = { B: 'Bueno', R: 'Regular', M: 'Malo', SI: 'Sí', NO: 'No', FOTO: 'Foto' };
     let h = '<div class="tarea ' + (ok ? 'ok' : atras ? 'atrasada' : '') + '" id="t-' + esc(i.instancia_id) + '"><p class="txt">' + (i.critica === 'SI' ? '<span class="crit">Crítica</span> ' : '') + esc(i.texto) + '</p>';
     if (ok) {
       const fuera = i.tipo_respuesta === 'NUMERO' && i.estado !== 'NO_APLICA' && Core.validarValor(i, i.valor).fuera_rango;
       const v = i.estado === 'NO_APLICA' ? 'No aplica' : ({ B: 'Bueno', R: 'Regular', M: 'Malo', SI: 'Sí', NO: 'No', FOTO: 'Foto tomada' }[i.valor] || esc(i.valor) + (i.tipo_respuesta === 'NUMERO' && i.unidad ? ' ' + esc(i.unidad) : ''));
-      h += '<div class="hecha"><span class="valor v-' + esc(fuera ? 'M' : i.valor) + '">' + v + (fuera ? ' · fuera de rango' : '') + '</span><small>' + esc(i.usuario || '') + ' · ' + hhmm(i.capturado_en) + (i.estado === 'HECHA_ATRASO' ? ' · con atraso' : '') + (i._local ? ' · <b>por enviar</b>' : '') + '</small></div>' +
+      h += '<div class="hecha"><span class="valor v-' + esc(fuera ? 'M' : i.valor) + '">' + v + (fuera ? ' · fuera de rango' : '') + '</span><small>' + esc(i.usuario || '') + ' · ' + hhmm(i.capturado_en) + (i.estado === 'HECHA_ATRASO' ? ' · con atraso' : '') + (nf(i) ? ' · 📷 ' + nf(i) : '') + (i._local ? ' · <b>por enviar</b>' : '') + '</small></div>' +
         (i.comentario ? '<small class="obs">💬 ' + esc(i.comentario) + '</small>' : '');
       return h + '</div>';
     }
     if (futura) return h + '<small class="meta">Disponible a las ' + hhmm(i.disponible_desde) + '</small></div>';
-    h += '<small class="meta">' + (atras ? '⏰ Atrasada · vencía ' : 'Hasta las ') + hhmm(i.vence_a) + (Core.tieneRango(i) ? ' · rango ' + esc(Core.textoRango(i)) : '') + (i.foto === 'OBLIGATORIA' ? ' · 📷 con foto' : '') + '</small>';
+    h += '<small class="meta">' + (atras ? '⏰ Atrasada · vencía ' : 'Hasta las ') + hhmm(i.vence_a) + (Core.tieneRango(i) ? ' · rango ' + esc(Core.textoRango(i)) : '') + (max && i.tipo_respuesta !== 'FOTO' ? ' · 📷 ' + (oblig ? 'con foto' : 'foto opcional') + (max > 1 ? ' (hasta ' + max + ')' : '') : '') + '</small>';
     const id = esc(i.instancia_id);
     if (b.paso === 'confirmar') h += '<div class="alerta"><b>' + esc(b.mensaje) + '</b><p>¿El valor está bien escrito?</p><div class="botones"><button class="b-no" data-a="confirmar" data-id="' + id + '">Sí, es correcto</button><button class="b-sec" data-a="corregir" data-id="' + id + '">Corregir</button></div></div>';
     else if (b.paso === 'comentario') h += '<div class="alerta"><p>¿Qué pasó? (opcional)</p><textarea id="c-' + id + '" rows="2" placeholder="Escribe un comentario"></textarea><div class="botones"><button class="b-si" data-a="comentar" data-id="' + id + '">Guardar</button></div></div>';
+    else if (b.paso === 'fotos') { // la respuesta ya está elegida: ahora las fotos (hasta el máximo de la tarea), con miniaturas para revisar
+      const fs = b.fotos || [], n = fs.length;
+      h += '<div class="alerta fotos">' + (i.tipo_respuesta === 'FOTO' ? '' : '<p>Respuesta: <b>' + esc(NOM[b.valor] || b.valor + (i.tipo_respuesta === 'NUMERO' && i.unidad ? ' ' + i.unidad : '')) + '</b> · <a data-a="corregir" data-id="' + id + '">cambiar</a></p>') +
+        (n ? '<div class="minis">' + fs.map((f, k) => '<span class="mini"><img src="' + f.mini + '" alt="Foto ' + (k + 1) + '"><button data-a="quitar-foto" data-id="' + id + '" data-f="' + esc(f.id) + '" aria-label="Borrar foto ' + (k + 1) + '">✕</button><small>' + hhmm(f.t) + '</small></span>').join('') + '</div>' : '') +
+        '<p class="cuenta">📷 <b>' + n + '/' + max + '</b> ' + (max === 1 ? 'foto' : 'fotos') + (oblig && !n ? ' · necesita al menos una' : !oblig && !n ? ' · opcional' : n >= max ? ' · máximo alcanzado' : '') + '</p>' + (b.error ? '<p class="error">' + esc(b.error) + '</p>' : '') +
+        '<div class="botones">' + (n < max ? '<button class="b-sec" data-a="foto" data-id="' + id + '">📷 ' + (n ? 'Otra foto' : 'Tomar foto') + '</button>' : '') +
+        '<button class="b-si" data-a="fotos-ok" data-id="' + id + '"' + (oblig && !n ? ' disabled' : '') + '>' + (n ? 'Enviar' : 'Enviar sin foto') + '</button></div></div>';
+    }
     else if (b.paso === 'noaplica') h += '<div class="alerta"><p>¿Por qué no aplica?</p><textarea id="c-' + id + '" rows="2" placeholder="Motivo"></textarea><div class="botones"><button class="b-si" data-a="noaplica-ok" data-id="' + id + '">Guardar</button><button class="b-sec" data-a="corregir" data-id="' + id + '">Volver</button></div></div>';
     else {
       const B = (v, cl, t) => '<button class="' + cl + '" data-a="resp" data-id="' + id + '" data-v="' + v + '">' + t + '</button>';
       if (i.tipo_respuesta === 'SI_NO') h += '<div class="botones">' + B('SI', 'b-si', 'Sí') + B('NO', 'b-no', 'No') + '</div>';
       else if (i.tipo_respuesta === 'BRM') h += '<div class="botones">' + B('B', 'b-si', 'Bueno') + B('R', 'b-reg', 'Regular') + B('M', 'b-no', 'Malo') + '</div>';
-      else if (i.tipo_respuesta === 'NUMERO') h += '<div class="numero"><button class="signo" data-a="signo" data-id="' + id + '">±</button><input id="n-' + id + '" inputmode="decimal" autocomplete="off" placeholder="0" value="' + esc(b.valor || '') + '"><span>' + esc(i.unidad || '') + '</span><button class="b-si" data-a="num" data-id="' + id + '">' + (i.foto === 'OBLIGATORIA' ? '📷 Foto' : 'Guardar') + '</button></div>';
+      else if (i.tipo_respuesta === 'NUMERO') h += '<div class="numero"><button class="signo" data-a="signo" data-id="' + id + '">±</button><input id="n-' + id + '" inputmode="decimal" autocomplete="off" placeholder="0" value="' + esc(b.valor || '') + '"><span>' + esc(i.unidad || '') + '</span><button class="b-si" data-a="num" data-id="' + id + '">Guardar</button></div>';
       else if (i.tipo_respuesta === 'TEXTO') h += '<div class="texto"><textarea id="x-' + id + '" rows="2" placeholder="Escribe aquí">' + esc(b.valor || '') + '</textarea><button class="b-si" data-a="txt" data-id="' + id + '">Guardar</button></div>';
       else h += '<div class="botones">' + B('FOTO', 'b-si', '📷 Tomar foto') + '</div>';
       if (b.error) h += '<p class="error">' + esc(b.error) + '</p>';
-      h += '<div class="extra">' + (i.foto === 'OPCIONAL' ? '<a data-a="foto" data-id="' + id + '">📷 ' + ((b.fotos || []).length ? 'Foto lista ✓' : 'Agregar foto') + '</a>' : '<span></span>') + '<a data-a="noaplica" data-id="' + id + '">No aplica</a></div>';
+      h += '<div class="extra"><span></span><a data-a="noaplica" data-id="' + id + '">No aplica</a></div>'; // las fotos van después de la respuesta
     }
     return h + '</div>';
   }
@@ -390,9 +410,11 @@
     else if (a === 'num') responder(i, $('#n-' + CSS.escape(id)).value);
     else if (a === 'txt') responder(i, $('#x-' + CSS.escape(id)).value);
     else if (a === 'confirmar') { const b = borr(i); b.confirmado = true; b.paso = ''; responder(i, b.valor); }
-    else if (a === 'corregir') { delete S.borr[id]; pintar(); }
+    else if (a === 'corregir') descartar(i);
     else if (a === 'comentar') { const b = borr(i); b.comentario = $('#c-' + CSS.escape(id)).value.trim(); b.paso = ''; responder(i, b.valor); }
-    else if (a === 'foto') { await tomarFoto(i); pintar(); }
+    else if (a === 'foto') agregarFoto(i);
+    else if (a === 'quitar-foto') quitarFoto(i, el.dataset.f);
+    else if (a === 'fotos-ok') { borr(i).fotosListas = true; responder(i); }
     else if (a === 'noaplica') { borr(i).paso = 'noaplica'; pintar(); }
     else if (a === 'noaplica-ok') guardar(i, { no_aplica: true, comentario: $('#c-' + CSS.escape(id)).value.trim() });
     else if (a === 'deshacer') deshacer();
