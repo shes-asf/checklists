@@ -60,7 +60,7 @@
     const pub = await versionPublicada(), min = (S.estado && S.estado.app_min) || '';
     const meta = pub && cmpVer(VER, pub) < 0 ? pub : obligatoria() ? min : '';
     S.verNueva = meta; if (!meta) { guardia.set(null); return false; }
-    if (S.ocupado || S.deshacer) return false; // en medio de una foto, un PDF o una respuesta: se reintenta en la próxima pasada
+    if (S.ocupado || S.deshacer || Object.keys(S.borr).some(k => S.borr[k].paso)) return false; // en medio de una foto, un PDF o una respuesta: se reintenta en la próxima pasada
     if (!manual && !obligatoria() && S.usuario && S.vista === 'checklist') { barra(); return false; } // no se interrumpe a quien está respondiendo
     return actualizarApp(meta, manual);
   }

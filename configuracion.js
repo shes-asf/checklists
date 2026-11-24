@@ -72,8 +72,9 @@
       '<p><select id="tipoRegla">' + Object.keys(C.tipos).map(t => '<option>' + t + '</option>').join('') + '</select> <button class="sec" data-add="reglas">+ Agregar regla para una sede específica</button></p>';
     if (C.sec === 'telegram') h += vTelegram();
     if (C.sec === 'equipos') h += '<p class="ayuda">Celulares registrados con la clave de equipos. Si un celular se pierde, márcalo como no autorizado.</p>' +
-      '<p class="ayuda">Cada celular baja los cambios de configuración y la versión nueva de la app cuando se abre con señal (y cada 2 minutos mientras está abierto). Aquí se ve qué tiene cada uno. <b>Forzar actualización</b> hace que ningún celular con señal pueda seguir usando una versión de la app anterior a la publicada.</p>' +
-      '<p><button class="sec" id="forzar">Forzar actualización en los equipos</button> <button class="sec" id="verEquipos">Volver a consultar</button> <span class="ayuda">Versión mínima exigida: <b>' + esc(C.app_min || 'ninguna') + '</b> · configuración actual: <b>' + esc(C.rev || '—') + '</b></span></p>' + grilla('equipos');
+      '<p class="ayuda">Cada celular baja los cambios de configuración y la versión nueva de la app cuando se abre con señal (y cada 2 minutos mientras está abierto). Aquí se ve qué tiene cada uno. <b>La actualización es automática</b>: cuando se publica una versión nueva de la app, el sistema la detecta en su siguiente ciclo (5 minutos) y la exige a todos los celulares, sin que nadie tenga que hacer nada. Se apaga con el parámetro AUTO_ACTUALIZAR = NO. El botón sirve para exigirla en el momento.</p>' +
+      '<p><button class="sec" id="forzar">Forzar actualización en los equipos</button> <button class="sec" id="verEquipos">Volver a consultar</button> <span class="ayuda">Versión mínima exigida: <b>' + esc(C.app_min || 'ninguna') + '</b> · configuración actual: <b>' + esc(C.rev || '—') + '</b></span></p>' + grilla('equipos') +
+      '<h3>Autoprueba del sistema</h3><p class="ayuda">Prueba el sistema real de punta a punta, sin celulares: álbum de fotos por Telegram, correo con varios adjuntos, PDF con varias fotos, plazo incumplido y checklist no iniciado. Los mensajes llegan al grupo de Telegram de la primera sede, marcados como <b>PRUEBA</b>; los correos, solo a ti. Tarda cerca de 2 minutos y al terminar borra lo que creó.</p><p><button class="sec" id="autoprueba">Ejecutar autoprueba</button></p><div id="apRes"></div>';
     if (C.sec === 'parametros') h += grilla('parametros');
     h += '</div>';
     if (C.sec !== 'telegram') h += '<div class="fijo-abajo"><button id="guardar"' + (C.sucio ? '' : ' disabled') + '>Guardar cambios</button><span class="ayuda">' + (C.sucio ? 'Hay cambios sin guardar.' : 'Sin cambios pendientes.') + ' Los celulares toman los cambios la próxima vez que tengan señal.</span></div>';
@@ -196,6 +197,25 @@
         recibir(r);
       } catch (e) { C.msg = ['mal', 'No se pudo: ' + e.message]; }
       return pintar();
+    }
+    if (t.id === 'autoprueba') {
+      if (C.sucio) { C.msg = ['mal', 'Primero guarda los cambios pendientes.']; return pintar(); }
+      if (!confirm('Se enviarán mensajes de PRUEBA al grupo de Telegram y correos a tu dirección. ¿Continuar?')) return;
+      const caja = document.querySelector('#apRes'), lin = []; t.disabled = true;
+      const ver = (cls, txt) => { lin.push('<div class="aviso ' + cls + '">' + txt + '</div>'); caja.innerHTML = lin.join(''); };
+      const envios = r => (r.envios || []).map(x => esc(x.canal) + ' · ' + esc(x.que) + ' · ' + esc(x.adjunto) + ' → <b>' + esc(x.resultado) + '</b>').join('<br>');
+      const estado = r => ((r.estado || {}).checklists || []).map(x => esc(x.checklist) + ': ' + esc(x.estado) + (x.plazo ? ' · ' + esc(x.plazo) : '') + ' · PDF ' + esc(x.pdf || 'NO') + ' · ' + esc(x.correo || 'sin correo')).join('<br>');
+      let mal = false;
+      try {
+        for (const paso of ['preparar', 'respuestas', 'reloj']) {
+          ver('', 'Paso: ' + paso + '…'); const r = await api({ action: 'admin_autoprueba', paso }); lin.pop();
+          if (!r.ok) throw new Error(paso + ': ' + r.error);
+          const err = /ERROR|SIN_/.test(JSON.stringify([r.envios, r.estado])); mal = mal || err;
+          ver(err ? 'mal' : 'ok', '<b>' + paso + '</b>' + (paso === 'preparar' ? ' · grupo de ' + esc(r.sede) + ' · correo ' + esc(r.correo) : '<br>' + envios(r) + '<br>' + estado(r)));
+        }
+      } catch (e) { mal = true; ver('mal', 'Falló: ' + esc(e.message)); }
+      try { await api({ action: 'admin_autoprueba', paso: 'limpiar' }); ver(mal ? 'mal' : 'ok', mal ? 'Terminó con errores. Lo creado por la prueba se borró.' : 'Autoprueba correcta. Lo creado por la prueba se borró.'); } catch (e) { ver('mal', 'No se pudo limpiar: ' + esc(e.message)); }
+      t.disabled = false; return;
     }
     if (t.id === 'nuevaPl') { const p = { plantilla_id: nuevoId('P'), nombre: 'Nuevo checklist', sede_id: (C.t.Sedes[0] || {}).sede_id || '', turno: 'AM', rol_id: '', version: 1, dias: 'LMXJVS', hora_envio: '08:00', hora_cierre: '10:00', tolerancia_cierre_min: 15, activa: 'SI', hora_inicio_turno: '', plazo_min: '' }; C.t.Plantillas.push(p); C.pl = p.plantilla_id; C.sucio = true; return pintar(); }
     if (t.id === 'dupPl') {
