@@ -44,6 +44,9 @@
       if (enCurso) return enCurso;
       enCurso = (async () => {
         const eq = await Local.get('equipo'); let enviados = 0, error = '';
+        // Lo que el servidor rechaza de forma definitiva (fuera de horario, sin permiso) no se reintenta: se anota para que la app lo informe.
+        const rechazo = async x => { const l = (await Local.get('rechazos')) || []; l.push(x); await Local.set('rechazos', l); };
+        const avance = async () => { try { const c = await Cola.todo(); new BroadcastChannel('cola').postMessage({ progreso: true, quedan: c.length, fotos: c.filter(x => x.tipo === 'archivo').length }); } catch (e) { } };
         if (!eq) return { enviados, error: 'sin equipo' };
         try {
           for (;;) {
@@ -53,17 +56,24 @@
               const f = it.evidencia_id && !it.data ? await Local.foto(it.evidencia_id) : null;
               const r = await api(Object.assign({ action: 'archivo', equipo: eq.token }, it.cuerpo, { data: it.data || (f && f.data) }));
               if (!r.ok && !/incompleto/.test(r.error || '')) throw new Error(r.error || 'RED');
-              await Cola.borrar(it.id); enviados++;
+              await Cola.borrar(it.id); enviados++; await avance();
             } else if (it.tipo === 'respuesta') {
               const lote = []; for (const x of cola) { if (x.tipo !== 'respuesta' || lote.length >= 25) break; lote.push(x); }
               const r = await api({ action: 'respuestas', equipo: eq.token, items: lote.map(x => x.cuerpo) });
               if (!r.ok) throw new Error(r.error || 'RED');
               const res = {}; (r.resultados || []).forEach(x => res[x.respuesta_id] = x);
-              for (const x of lote) { const y = res[x.cuerpo.respuesta_id]; if (y && (y.ok || y.descartar)) { await Cola.borrar(x.id); enviados++; } else throw new Error((y && y.error) || 'RED'); }
+              for (const x of lote) {
+                const y = res[x.cuerpo.respuesta_id];
+                if (y && (y.ok || y.descartar)) { if (!y.ok) await rechazo({ tipo: 'respuesta', respuesta_id: x.cuerpo.respuesta_id, instancia_id: x.cuerpo.instancia_id, error: y.error || 'No se pudo guardar' }); await Cola.borrar(x.id); enviados++; }
+                else throw new Error((y && y.error) || 'RED');
+              }
+              await avance();
             } else if (it.tipo === 'cerrar') {
               const r = await api(Object.assign({ action: 'cerrar', equipo: eq.token }, it.cuerpo));
               if (!r.ok && !r.descartar) throw new Error(r.error || 'RED');
-              await Cola.borrar(it.id); enviados++;
+              if (r.ok) { const c = (await Local.get('cierres')) || {}; c[it.cuerpo.ejecucion_id] = { t: it.cuerpo.cerrado_en, sin_cambios: !!r.sin_cambios, v: r.informe_version || 1 }; await Local.set('cierres', c); } // el servidor confirmó: recién ahí el checklist cuenta como enviado
+              else await rechazo({ tipo: 'cerrar', ejecucion_id: it.cuerpo.ejecucion_id, error: r.error || 'No se pudo cerrar' });
+              await Cola.borrar(it.id); enviados++; await avance();
             } else await Cola.borrar(it.id);
           }
         } catch (e) { error = String(e.message || e); }

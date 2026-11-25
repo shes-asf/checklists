@@ -217,10 +217,11 @@ var Core = (function () {
   /** Valor "malo" de una tarea Sí/No: normalmente NO. Si su alerta se configuró para SI (algo que debe estar apagado), el malo es SI. */
   function malSiNo(inst) { return String(inst.critico_estados || '').toUpperCase().replace(/\s/g, '') === 'SI' ? 'SI' : 'NO'; }
   /**
-   * ORDEN DE UNA RESPUESTA: primero el valor; después la confirmación (número fuera de rango), el comentario y, al final, las fotos.
-   * b = borrador { valor, confirmado, comentario (undefined = aún no se pidió), fotos (cantidad tomada), fotosListas (ya tocó Enviar) }.
-   * Devuelve { paso: 'error' | 'confirmar' | 'comentario' | 'fotos' | 'enviar', mensaje, valor, fuera }.
-   * Con foto OBLIGATORIA nunca llega a 'enviar' sin al menos una foto.
+   * ORDEN DE UNA RESPUESTA: primero el valor; después la confirmación (número fuera de rango) y el comentario. Con eso la respuesta
+   * queda GUARDADA en el celular; las fotos se toman después y no hay un botón de envío por tarea (todo sale en segundo plano y al
+   * tocar "Cerrar y enviar checklist").
+   * b = borrador { valor, confirmado, comentario (undefined = aún no se pidió) }.
+   * Devuelve { paso: 'error' | 'confirmar' | 'comentario' | 'guardar', mensaje, valor, fuera }.
    */
   function pasoRespuesta(inst, b) {
     var tipo = inst.tipo_respuesta, valor = b.valor, fuera = false;
@@ -235,13 +236,65 @@ var Core = (function () {
     var u = String(valor).toUpperCase();
     var pide = (tipo === 'BRM' && (u === 'R' || u === 'M')) || (tipo === 'SI_NO' && u === malSiNo(inst)) || fuera;
     if (pide && b.comentario === undefined) return { paso: 'comentario', valor: valor, fuera: fuera };
-    var max = fotosMax(inst), n = num(b.fotos, 0);
-    if (max > 0) {
-      if (n > max) return { paso: 'fotos', mensaje: 'Esta tarea admite ' + max + (max === 1 ? ' foto' : ' fotos') + ' como máximo', valor: valor, fuera: fuera };
-      if (fotoObligatoria(inst) && n < 1) return { paso: 'fotos', mensaje: b.fotosListas ? 'Esta tarea necesita al menos una foto' : '', valor: valor, fuera: fuera, falta: true };
-      if (!b.fotosListas) return { paso: 'fotos', valor: valor, fuera: fuera };
-    }
-    return { paso: 'enviar', valor: valor, fuera: fuera };
+    return { paso: 'guardar', valor: valor, fuera: fuera };
+  }
+  /**
+   * ¿La respuesta se puede ENVIAR? Con foto obligatoria necesita al menos una; nunca más fotos que el máximo de la tarea.
+   * Mientras no esté lista, la tarea sigue contando como pendiente (se avisa al cerrar).
+   */
+  function respuestaLista(inst, nFotos, noAplica) {
+    var n = num(nFotos, 0), max = fotosMax(inst);
+    if (noAplica) return { ok: true };
+    if (n > max) return { ok: false, mensaje: max ? 'Esta tarea admite ' + max + (max === 1 ? ' foto' : ' fotos') + ' como máximo' : 'Esta tarea no lleva foto' };
+    if (fotoObligatoria(inst) && n < 1) return { ok: false, falta: true, mensaje: 'Esta tarea necesita al menos una foto' };
+    return { ok: true };
+  }
+
+  // ---- Completar o corregir un checklist ya enviado -----------------------
+  /** Un checklist admite respuestas y correcciones hasta su límite (hora de cierre + margen), según la hora de CAPTURA. */
+  function enHorario(ejec, capturadoISO) { return !!ejec && !!ejec.limite && iso(capturadoISO) <= ejec.limite; }
+  /** Puede corregir una respuesta quien la dio o un jefe (rol que ve toda la sede). */
+  function puedeCorregir(usuarioIdRespuesta, usuario) {
+    if (!usuario) return false;
+    return String(usuario.usuario_id) === String(usuarioIdRespuesta) || si(usuario.ve_toda_la_sede);
+  }
+  function nombreValor(inst, r) {
+    if (!r) return 'Sin responder';
+    if (si(r.no_aplica)) return 'No aplica';
+    var v = String(r.valor == null ? '' : r.valor);
+    return ({ B: 'Bueno', R: 'Regular', M: 'Malo', SI: 'Sí', NO: 'No', FOTO: 'Foto' })[v.toUpperCase()] || (v + (inst.tipo_respuesta === 'NUMERO' && inst.unidad ? ' ' + inst.unidad : ''));
+  }
+  /** Foto del estado de un checklist al enviar un informe: sirve para decir, en el siguiente, qué cambió. */
+  function fotoInforme(instancias, nFotos) {
+    var plan = (instancias || []).filter(function (i) { return i.origen === 'PLAN' || !i.origen; }), r = resumen(plan), ids = {};
+    (instancias || []).forEach(function (i) { if (i.respuesta_id) ids[i.instancia_id] = i.respuesta_id; });
+    return { h: r.hechas, n: r.total, p: r.pct_cumplimiento, nf: num(nFotos, 0), i: ids, f: faltas(instancias).map(function (x) { return [x.instancia_id + '|' + x.tipo, x.detalle + ' — ' + x.texto]; }) };
+  }
+  /**
+   * QUÉ CAMBIÓ desde el informe anterior. previo = fotoInforme del informe anterior; instancias con su respuesta vigente (.valor, .usuario...);
+   * respuestas = todas las del checklist (también las reemplazadas). Devuelve las tareas completadas después, las correcciones
+   * (valor anterior -> nuevo, quién y cuándo; `mejora` si pasó de mal estado a bueno), el cumplimiento antes y ahora, y las faltas resueltas o nuevas.
+   */
+  function cambios(previo, instancias, respuestas, nFotos) {
+    previo = previo || { i: {}, f: [] };
+    var porId = {}, out = { completadas: [], correcciones: [], resueltas: [], nuevas: [], fotos: Math.max(0, num(nFotos, 0) - num(previo.nf, 0)) };
+    (respuestas || []).forEach(function (r) { porId[r.respuesta_id] = r; });
+    (instancias || []).forEach(function (i) {
+      var antes = (previo.i || {})[i.instancia_id], ahora = i.respuesta_id;
+      if (!ahora || antes === ahora) return;
+      var ra = porId[antes], rn = porId[ahora] || {};
+      if (!antes) { out.completadas.push({ instancia_id: i.instancia_id, texto: i.texto, valor: nombreValor(i, rn), usuario: rn.usuario || '', capturado_en: rn.capturado_en || '', critica: i.critica === 'SI' }); return; }
+      var ba = ra && !si(ra.no_aplica) ? esBuena(i, ra.valor) : null, bn = !si(rn.no_aplica) ? esBuena(i, rn.valor) : null;
+      out.correcciones.push({ instancia_id: i.instancia_id, texto: i.texto, antes: nombreValor(i, ra), despues: nombreValor(i, rn), usuario: rn.usuario || '', capturado_en: rn.capturado_en || '',
+        usuario_antes: ra ? ra.usuario : '', comentario: rn.comentario || '', mejora: ba === false && bn === true, empeora: ba !== false && bn === false, critica: i.critica === 'SI' });
+    });
+    var fa = {}, fn = {}; (previo.f || []).forEach(function (x) { fa[x[0]] = x[1]; });
+    faltas(instancias).forEach(function (x) { var k = x.instancia_id + '|' + x.tipo; fn[k] = 1; if (!fa[k]) out.nuevas.push(x.detalle + ' — ' + x.texto); });
+    Object.keys(fa).forEach(function (k) { if (!fn[k]) out.resueltas.push(fa[k]); });
+    var r = resumen((instancias || []).filter(function (i) { return i.origen === 'PLAN' || !i.origen; }));
+    out.antes = { hechas: num(previo.h, 0), total: num(previo.n, 0), pct: previo.p === undefined ? '' : previo.p }; out.ahora = { hechas: r.hechas, total: r.total, pct: r.pct_cumplimiento };
+    out.hay = !!(out.completadas.length || out.correcciones.length || out.fotos);
+    return out;
   }
 
   // ---- Cumplimiento -------------------------------------------------------
@@ -310,7 +363,8 @@ var Core = (function () {
     idEjecucion: idEjecucion, idInstancia: idInstancia, horasDeTarea: horasDeTarea, generarInstancias: generarInstancias,
     instanciaRelectura: instanciaRelectura, evaluarEstado: evaluarEstado, tieneRango: tieneRango, validarValor: validarValor,
     textoRango: textoRango, esRespuestaCritica: esRespuestaCritica, esBuena: esBuena, resumen: resumen, agrupar: agrupar, vencidas: vencidas, completa: completa, faltas: faltas,
-    fotosMax: fotosMax, fotoObligatoria: fotoObligatoria, malSiNo: malSiNo, pasoRespuesta: pasoRespuesta,
+    fotosMax: fotosMax, fotoObligatoria: fotoObligatoria, malSiNo: malSiNo, pasoRespuesta: pasoRespuesta, respuestaLista: respuestaLista,
+    enHorario: enHorario, puedeCorregir: puedeCorregir, nombreValor: nombreValor, fotoInforme: fotoInforme, cambios: cambios,
   };
 })();
 if (typeof module !== 'undefined') module.exports = Core;

@@ -72,7 +72,7 @@
     h += '<h2>Checklists del período (toca uno para ver quién respondió cada tarea)</h2><div class="caja">' + tabla(['Fecha', 'Sede', 'Checklist', 'Turno', 'Estado', 'Plazo', 'Cumplimiento', 'A tiempo', 'Inicio', 'Cierre', 'Cerrado por', 'PDF', 'Correo'],
       ejec.slice().sort((a, b) => (b.fecha + b.envio_programado).localeCompare(a.fecha + a.envio_programado)).map(e => '<tr class="clic" data-ejec="' + esc(e.ejecucion_id) + '"><td>' + fechaCorta(e.fecha) + '</td><td>' + esc(nomSede[e.sede_id]) + '</td><td><b>' + esc(e.plantilla) + '</b></td><td>' + esc(e.turno) +
         '</td><td>' + chipEstado(e.estado === 'ABIERTA' ? 'PENDIENTE' : e.estado) + '</td><td>' + chipPlazo(e) + '</td><td class="n">' + barra(e.pct_cumplimiento === '' ? '' : Number(e.pct_cumplimiento)) + '<b>' + pct(e.pct_cumplimiento) + '</b> (' + (e.hechas || 0) + '/' + e.total + ')</td><td class="n">' + pct(e.pct_a_tiempo) +
-        '</td><td>' + hora(e.inicio) + '</td><td>' + hora(e.cierre) + '</td><td>' + esc(e.cerrada_por || '') + '</td><td>' + (e.pdf_evidencia_id ? '<button class="mini sec" data-pdf="' + esc(e.pdf_evidencia_id) + '">PDF</button>' : '') + '</td><td title="' + esc(e.correo_resultado || '') + '">' + (e.correo_enviado_en ? 'Enviado ' + hora(e.correo_enviado_en) : /^ERROR/.test(e.correo_resultado || '') ? '<span class="chip c-mal">Error</span>' : '') + '</td></tr>'), ['', '', '', '', '', '', 'n', 'n']) + '</div>';
+        '</td><td>' + hora(e.inicio) + '</td><td>' + hora(e.cierre) + '</td><td>' + esc(e.cerrada_por || '') + '</td><td>' + (e.pdf_evidencia_id ? '<button class="mini sec" data-pdf="' + esc(e.pdf_evidencia_id) + '">PDF' + (Number(e.informe_version) > 1 ? ' v' + esc(e.informe_version) : '') + '</button>' : '') + '</td><td title="' + esc(e.correo_resultado || '') + '">' + (e.correo_enviado_en ? 'Enviado ' + hora(e.correo_enviado_en) : /^ERROR/.test(e.correo_resultado || '') ? '<span class="chip c-mal">Error</span>' : '') + '</td></tr>'), ['', '', '', '', '', '', 'n', 'n']) + '</div>';
     h += '<h2>Alertas</h2><div class="caja">' + tabla(['Creada', 'Sede', 'Tipo', 'Detalle', 'Estado', 'Nivel', 'Se hizo cargo', 'Resuelta por', 'Min. hasta resolver'], alertas.map(a => {
       const min = a.resuelta_en ? Math.round((new Date(a.resuelta_en) - new Date(a.creada_en)) / 60000) : '';
       return '<tr><td>' + hora(a.creada_en, true) + '</td><td>' + esc(nomSede[a.sede_id]) + '</td><td>' + esc(a.tipo) + '</td><td style="max-width:420px">' + esc(a.mensaje).slice(0, 260) + '</td><td>' + (a.resuelta_via === 'INFORMATIVA' ? '<span class="chip c-gris">Aviso</span>' : chipEstado(a.estado)) + '</td><td>' + (String(a.nivel) === '2' ? '<span class="chip c-mal">Escalada</span>' : 'Grupo') +
@@ -86,6 +86,7 @@
     l.forEach(i => {
       if (i.seccion !== sec) { sec = i.seccion; filas.push('<tr><th colspan="7">' + esc(sec || 'Tareas') + '</th></tr>'); }
       filas.push('<tr><td>' + (i.critica === 'SI' ? '<span class="chip c-mal">Crítica</span> ' : '') + esc(i.texto) + (i.comentario ? '<br><span class="ayuda">💬 ' + esc(i.comentario) + '</span>' : '') + '</td><td>' + chipEstado(i.estado) + '</td><td><b style="color:' + (i.fuera_rango === 'SI' || /^(M|NO)$/.test(i.valor) ? 'var(--rojo)' : 'inherit') + '">' + valor(i) + '</b>' + (i.fuera_rango === 'SI' ? ' <span class="chip c-mal">fuera de rango</span>' : '') +
+        ((i.historial || []).length > 1 ? ' <button class="mini sec" data-hist="' + esc(i.instancia_id) + '" title="Ver las respuestas anteriores">✏️ corregida (v' + i.version + ')</button>' : '') +
         '</td><td>' + esc(i.usuario) + '</td><td>' + hora(i.capturado_en) + (i.minutos_atraso > 0 ? ' <span class="ayuda">(+' + i.minutos_atraso + ' min)</span>' : '') + '</td><td>' + (Number(i.retraso_sync_min) > 5 ? '<span class="chip c-med" title="Hora en que llegó al servidor">llegó ' + hora(i.recibido_en) + '</span>' : '') + '</td><td>' + ((i.fotos || []).length > 1 ? '<button class="mini sec" data-fotos="' + esc(i.instancia_id) + '">Ver ' + i.fotos.length + ' fotos</button>' : i.foto ? '<button class="mini sec" data-foto="' + esc(i.foto) + '">Ver foto</button><br><span class="ayuda">' + hora(((i.fotos || [])[0] || {}).t, true) + '</span>' : '') + '</td></tr>');
     });
     document.querySelector('#modal').innerHTML = '<div class="modal" data-cerrar="1"><div><div style="display:flex;justify-content:space-between;gap:12px;align-items:center"><h2 style="margin:0">' + esc(e.plantilla) + ' · ' + fechaCorta(e.fecha) + ' · ' + pct(e.pct_cumplimiento) + '</h2><button class="sec" data-cerrar="1">Cerrar</button></div>' +
@@ -112,8 +113,18 @@
       c.outerHTML = r.ok ? '<img src="data:' + r.mime + ';base64,' + r.data + '" alt="Foto ' + (k + 1) + '" style="max-width:100%;border-radius:8px">' : '<div class="aviso mal">No se pudo cargar: ' + esc(r.error) + '</div>';
     }
   }
+  // Historial de una tarea corregida: todas sus respuestas, de la primera a la vigente (nada se sobrescribe).
+  function verHistorial(instId) {
+    const i = D.datos.instancias.find(x => x.instancia_id === instId), hs = (i && i.historial) || [];
+    const div = document.createElement('div'); div.className = 'modal'; div.dataset.foto = '1';
+    div.innerHTML = '<div><h2 style="margin:0 0 8px">' + esc(i.texto) + ' · historial de respuestas</h2>' + tabla(['Versión', 'Respuesta', 'Quién', 'Hora (celular)', 'Comentario'],
+      hs.map((h, k) => '<tr><td>v' + h.version + (k === hs.length - 1 ? ' <span class="chip c-ok">vigente</span>' : '') + '</td><td><b>' + valor(Object.assign({}, i, { valor: h.valor, estado: h.no_aplica === 'SI' ? 'NO_APLICA' : 'HECHA' })) + '</b>' + (h.fuera_rango === 'SI' ? ' <span class="chip c-mal">fuera de rango</span>' : '') + '</td><td>' + esc(h.usuario) + '</td><td>' + hora(h.capturado_en) + '</td><td>' + esc(h.comentario || '') + '</td></tr>')) +
+      '<p class="ayuda">Toca fuera para cerrar</p></div>';
+    div.onclick = ev => { if (ev.target === div) div.remove(); }; document.body.appendChild(div);
+  }
   main.addEventListener('click', e => {
     const t = e.target, q = s => t.closest(s);
+    if (t.dataset.hist) return verHistorial(t.dataset.hist);
     if (t.dataset.fotos) return verFotos(t.dataset.fotos);
     if (t.id === 'ver') { D.desde = document.querySelector('#desde').value; D.hasta = document.querySelector('#hasta').value; return cargar(); }
     if (t.dataset.r) return rango(Number(t.dataset.r));

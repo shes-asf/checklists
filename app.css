@@ -70,3 +70,9 @@ button:active{filter:brightness(.9)}
 .minis button{position:absolute;right:-6px;top:-6px;width:28px;height:28px;border-radius:50%;border:0;background:var(--rojo);color:#fff;font-size:.9rem;font-weight:800;line-height:1;padding:0}
 .minis small{font-size:.72rem}.cuenta{font-size:.95rem}
 .botones button:disabled{opacity:.45}
+
+/* 1.4: envío único y correcciones */
+.alerta.corr{background:var(--azul2)}.alerta.corr p{margin:.25rem 0}
+.minis .sinmini{display:grid;place-items:center;width:76px;height:76px;border-radius:10px;border:1px dashed var(--borde);font-style:normal;color:var(--gris);font-size:.9rem}
+.extra a+a{margin-left:18px}
+.envio .progreso{margin:14px 0}.envio h1{margin:.4rem 0}
