@@ -290,7 +290,7 @@
     const t = e.target, d = t.dataset;
     if (d.sec) { C.sec = d.sec; C.msg = null; C.edit = ''; return pintar(); }
     if (d.edit !== undefined) { const f = FILAS.tareas()[d.edit]; if (f) { C.edit = f.tarea_id; pintar(); const p = main.querySelector('.panel-ed'), w = main.querySelector('.tabla-wrap'), tr = main.querySelector('tr.editando'), th = main.querySelector('.tabla-wrap thead'); if (p) p.scrollTop = 0;
-      if (w && tr && th && (tr.offsetTop < w.scrollTop + th.offsetHeight || tr.offsetTop + tr.offsetHeight > w.scrollTop + w.clientHeight)) w.scrollTop = tr.offsetTop - th.offsetHeight - 6; } return; }
+      if (w && tr && th) { const r = tr.getBoundingClientRect(), rw = w.getBoundingClientRect(), arriba = Math.max(rw.top, 0) + th.offsetHeight, abajo = Math.min(rw.bottom, window.innerHeight); if (r.top < arriba || r.bottom > abajo) tr.scrollIntoView({ block: 'center' }); } } return; } // la fila que se edita queda a la vista
     if (d.cerrar) { C.edit = ''; return pintar(); }
     if (d.rcam !== undefined) { const f = FILAS.tareas()[d.rcam]; f.minimo = ''; f.maximo = ''; marcar(); return pintar(); }
     if (t.id === 'avisoVisto') { C.aviso = null; pintar(); try { await api({ action: 'admin_aviso_visto' }); } catch (e) { } return; }
