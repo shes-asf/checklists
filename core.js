@@ -106,15 +106,15 @@ var Core = (function () {
 
   /**
    * Genera las instancias del día para una plantilla. Cada instancia guarda una COPIA de la tarea
-   * (texto, tipo, umbrales): así un cambio posterior de la plantilla no altera el histórico.
+   * (texto, tipo, rango): así un cambio posterior de la plantilla no altera el histórico.
    */
-  function generarInstancias(plantilla, tareas, secciones, fecha, tz, umbrales, activos) {
+  function generarInstancias(plantilla, tareas, secciones, fecha, tz, activos) {
     var v = ventana(plantilla, fecha, tz), secs = {}, acts = {}, out = [];
     (secciones || []).forEach(function (s) { secs[s.seccion_id] = s; });
     (activos || []).forEach(function (a) { acts[a.activo_id] = a; });
     (tareas || []).filter(function (t) { return String(t.plantilla_id) === String(plantilla.plantilla_id) && (t.activa === '' || t.activa == null || si(t.activa)); })
       .forEach(function (t) {
-        var tol = num(t.tolerancia_min, 15), sec = secs[t.seccion_id] || {}, u = umbralDe(t, umbrales);
+        var tol = num(t.tolerancia_min, 15), sec = secs[t.seccion_id] || {}, u = rangoDe(t, acts[t.activo_id]), esNum = String(t.tipo_respuesta || '').toUpperCase() === 'NUMERO';
         var cada = String(t.frecuencia || '').toUpperCase() === 'CADA_N_HORAS', sinHora = !cada && !normHora(t.hora_objetivo);
         horasDeTarea(t, plantilla, fecha, tz).forEach(function (h) {
           var prog = instanteEnTurno(h, v, fecha, tz), vence = mas(prog, tol);
@@ -125,10 +125,10 @@ var Core = (function () {
             sede_id: String(plantilla.sede_id), fecha: fecha,
             seccion: sec.nombre || '', orden: num(sec.orden, 0) * 1000 + num(t.orden, 0),
             texto: t.texto + (cada ? ' · ' + h : ''), tipo_respuesta: String(t.tipo_respuesta || 'SI_NO').toUpperCase(),
-            unidad: t.unidad || (u ? u.unidad : '') || '', foto: String(t.foto || 'NO').toUpperCase(),
+            unidad: (esNum ? u.unidad : t.unidad) || '', foto: String(t.foto || 'NO').toUpperCase(),
             critica: si(t.critica) ? 'SI' : 'NO', critico_estados: String(t.critico_estados || ''),
             activo_id: String(t.activo_id || ''), activo: (acts[t.activo_id] || {}).nombre || '', fotos_max: fotosMax(t) > 1 ? String(fotosMax(t)) : '',
-            minimo: u ? u.minimo : '', maximo: u ? u.maximo : '',
+            minimo: esNum ? u.minimo : '', maximo: esNum ? u.maximo : '', alerta_rango: esNum && u.origen ? alertaDe(t) : '',
             disponible_desde: iso(cada ? mas(prog, -Math.max(tol, 15)) : v.envio),
             programada_para: iso(prog), vence_a: iso(vence),
             estado: 'PENDIENTE', minutos_atraso: '', origen: 'PLAN', respuesta_id: '',
@@ -138,13 +138,30 @@ var Core = (function () {
     out.sort(function (a, b) { return a.orden - b.orden || (a.programada_para < b.programada_para ? -1 : 1); });
     return out;
   }
-  function umbralDe(tarea, umbrales) {
-    var porTarea = null, porActivo = null;
-    (umbrales || []).forEach(function (u) {
-      if (u.tarea_id && String(u.tarea_id) === String(tarea.tarea_id)) porTarea = u;
-      else if (u.activo_id && tarea.activo_id && String(u.activo_id) === String(tarea.activo_id)) porActivo = u;
-    });
-    return porTarea || porActivo;
+  function vacio(v) { return v === '' || v == null || String(v).trim() === ''; }
+  function alertaDe(t) { var a = String((t && t.alerta_rango) || '').toUpperCase().trim(); return a === 'TEMPERATURA' || a === 'OTRA' ? a : ''; }
+  /**
+   * RANGO DE UNA TAREA: el propio de la tarea (minimo/maximo escritos en ella) manda; si no tiene, el de su cámara; si no, ninguno.
+   * Devuelve { minimo, maximo, unidad, origen: 'TAREA' | 'CAMARA' | '' }. Es la única regla, igual en el celular, el servidor y las pruebas.
+   */
+  function rangoDe(tarea, activo) {
+    var a = activo || {}, al = alertaDe(tarea), un = function (x) { return x || (al === 'TEMPERATURA' ? '°C' : ''); };
+    if (!vacio(tarea.minimo) || !vacio(tarea.maximo)) return { minimo: vacio(tarea.minimo) ? '' : tarea.minimo, maximo: vacio(tarea.maximo) ? '' : tarea.maximo, unidad: un(tarea.unidad || a.unidad), origen: 'TAREA' };
+    if (tarea.activo_id && (!vacio(a.minimo) || !vacio(a.maximo))) return { minimo: vacio(a.minimo) ? '' : a.minimo, maximo: vacio(a.maximo) ? '' : a.maximo, unidad: un(tarea.unidad || a.unidad), origen: 'CAMARA' };
+    return { minimo: '', maximo: '', unidad: tarea.unidad || '', origen: '' };
+  }
+  /** ¿Esta tarea alerta por rango? 'TEMPERATURA', 'OTRA' o '' (un número con rango pero sin esta opción solo se marca en rojo, no alerta). */
+  function alertaRango(inst) { return tieneRango(inst) ? alertaDe(inst) : ''; }
+  /** Errores de configuración de una tarea con alerta de rango ([] = está bien). `activo` es su cámara, si tiene. */
+  function validarRango(tarea, activo) {
+    var al = alertaDe(tarea), err = [];
+    if (!al) return err;
+    if (String(tarea.tipo_respuesta || '').toUpperCase() !== 'NUMERO') return ['la alerta por rango solo sirve en tareas de tipo Número'];
+    if (al === 'TEMPERATURA' && !tarea.activo_id) err.push('falta elegir la cámara (obligatoria en "Fuera de rango de T°")');
+    var r = rangoDe(tarea, activo), mi = num(r.minimo, null), ma = num(r.maximo, null);
+    if (!r.origen || (mi === null && ma === null)) err.push('falta el rango: escribe mínimo o máximo, o elige una cámara que lo tenga');
+    else if (mi !== null && ma !== null && mi >= ma) err.push('el mínimo (' + mi + ') debe ser menor que el máximo (' + ma + ')');
+    return err;
   }
   /** Relectura que pide la regla T1 (id determinista: celular y servidor crean la misma). */
   function instanciaRelectura(inst, capturadoISO, minRelectura, minEscala) {
@@ -363,6 +380,7 @@ var Core = (function () {
     idEjecucion: idEjecucion, idInstancia: idInstancia, horasDeTarea: horasDeTarea, generarInstancias: generarInstancias,
     instanciaRelectura: instanciaRelectura, evaluarEstado: evaluarEstado, tieneRango: tieneRango, validarValor: validarValor,
     textoRango: textoRango, esRespuestaCritica: esRespuestaCritica, esBuena: esBuena, resumen: resumen, agrupar: agrupar, vencidas: vencidas, completa: completa, faltas: faltas,
+    rangoDe: rangoDe, alertaRango: alertaRango, validarRango: validarRango,
     fotosMax: fotosMax, fotoObligatoria: fotoObligatoria, malSiNo: malSiNo, pasoRespuesta: pasoRespuesta, respuestaLista: respuestaLista,
     enHorario: enHorario, puedeCorregir: puedeCorregir, nombreValor: nombreValor, fotoInforme: fotoInforme, cambios: cambios,
   };

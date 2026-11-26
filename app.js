@@ -24,7 +24,7 @@
   }
   function instancias(ej) {
     const e = S.estado; let lista;
-    if (ej._local) { const p = e.plantillas.find(x => x.plantilla_id === ej.plantilla_id); lista = Core.generarInstancias(p, e.tareas, e.secciones, ej.fecha, TZ(), e.umbrales, e.activos); }
+    if (ej._local) { const p = e.plantillas.find(x => x.plantilla_id === ej.plantilla_id); lista = Core.generarInstancias(p, e.tareas, e.secciones, ej.fecha, TZ(), e.activos); }
     else lista = e.instancias.filter(i => i.ejecucion_id === ej.ejecucion_id).map(i => Object.assign({}, i));
     const ids = new Set(lista.map(i => i.instancia_id));
     S.local.rel.forEach(r => { if (r.ejecucion_id === ej.ejecucion_id && !ids.has(r.instancia_id)) lista.push(Object.assign({}, r)); });
