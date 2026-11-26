@@ -8,6 +8,13 @@ self.addEventListener('fetch', e => {
   const u = new URL(e.request.url);
   if (e.request.method !== 'GET' || u.origin !== location.origin) return; // el backend nunca se cachea
   if (u.searchParams.has('nocache')) return; // consulta de la versión publicada: siempre va a la red
+  // Dashboard y configuración (computador, siempre con señal): primero la red, sin usar copias guardadas, para que una versión nueva se vea
+  // de inmediato y nunca se mezcle una pantalla anterior con el servidor nuevo. La copia local queda solo como respaldo sin conexión.
+  if (/\/(configuracion|dashboard)\.html$/.test(u.pathname) || /\/(configuracion|dashboard)\.html/.test(e.request.referrer || '')) {
+    e.respondWith(fetch(u.href, { cache: 'no-cache' }).then(r => { if (r.ok) { const copia = r.clone(); caches.open(VERSION).then(c => c.put(u.href, copia)); } return r; })
+      .catch(() => caches.match(u.href, { ignoreSearch: true }).then(r => r || new Response('Sin conexión', { status: 503 }))));
+    return;
+  }
   e.respondWith(caches.open(VERSION).then(async c => {
     const enCache = await c.match(e.request, { ignoreSearch: true });
     const deRed = fetch(e.request).then(r => { if (r.ok) c.put(e.request, r.clone()); return r; }).catch(() => null);
